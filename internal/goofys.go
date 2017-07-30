@@ -868,7 +868,7 @@ func (fs *Goofys) LookUpInodeMaybeDir(name string, fullName string) (inode *Inod
 		switch checking {
 		case 1:
 			if fs.flags.ExplicitDir {
-				checkErr[2] = fuse.ENOENT
+				checkErr[1] = fuse.ENOENT
 				goto doneCase
 			} else if fs.flags.Cheap {
 				errDirChan = make(chan error, 1)
