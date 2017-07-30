@@ -134,8 +134,8 @@ func NewGoofys(bucket string, awsConfig *aws.Config, flags *FlagStorage) *Goofys
 
 	var isAws bool
 	var err error
-	if !fs.flags.RegionSet {
-		err, isAws = fs.detectBucketLocationByHEAD()
+	/*if !fs.flags.RegionSet {
+        err, isAws = fs.detectBucketLocationByHEAD()
 		if err == nil {
 			// we detected a region header, this is probably AWS S3,
 			// or we can use anonymous access, or both
@@ -155,8 +155,9 @@ func NewGoofys(bucket string, awsConfig *aws.Config, flags *FlagStorage) *Goofys
 				log.Errorf("Unable to access '%v': %v", fs.bucket, err)
 			}
 		}
-	}
-
+	}*/
+        fs.fallbackV2Signer()
+    
 	// try again with the credential to make sure
 	err = mapAwsError(fs.testBucket())
 	if err != nil {

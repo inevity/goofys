@@ -218,6 +218,12 @@ func NewApp() (app *cli.App) {
 				Usage: "Enable S3-related debugging output.",
 			},
 
+			cli.StringFlag{
+				Name:  "cpuprofile",
+				Value: "",
+				Usage: "pprof debug file name",
+			},
+
 			cli.BoolFlag{
 				Name:  "f",
 				Usage: "Run goofys in foreground.",
@@ -278,6 +284,7 @@ type FlagStorage struct {
 	// Debugging
 	DebugFuse  bool
 	DebugS3    bool
+        Cpuprofile string   
 	Foreground bool
 }
 
@@ -336,6 +343,7 @@ func PopulateFlags(c *cli.Context) (flags *FlagStorage) {
 		// Debugging,
 		DebugFuse:  c.Bool("debug_fuse"),
 		DebugS3:    c.Bool("debug_s3"),
+                Cpuprofile: c.String("cpuprofile"),
 		Foreground: c.Bool("f"),
 	}
 

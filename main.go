@@ -40,6 +40,11 @@ import (
 	"github.com/sirupsen/logrus"
 
 	daemon "github.com/sevlyar/go-daemon"
+
+        //"net/http"
+        "runtime/pprof"
+        //"strconv"
+        //"runtime"
 )
 
 var log = GetLogger("main")
@@ -170,11 +175,20 @@ func massageArg0() {
 	}
 }
 
-var Version string
+func debug() {
+    /*panic("coredump test")*/
+    
+    /*go func() {
+        http.HandleFunc("/go", func(w http.ResponseWriter, r *http.Request) {
+            num := strconv.FormatInt(int64(runtime.NumGoroutine()), 10)
+            w.Write([]byte(num))
+        })
+        http.ListenAndServe("192.168.137.128:6060", nil)
+    }()*/
+}
 
 func main() {
-	VersionHash = Version
-
+        debug()
 	app := NewApp()
 
 	var flags *FlagStorage
@@ -195,6 +209,16 @@ func main() {
 		bucketName := c.Args()[0]
 		mountPoint := c.Args()[1]
 		flags = PopulateFlags(c)
+
+        if len(flags.Cpuprofile) > 0 {
+                f, err := os.Create(flags.Cpuprofile)
+                if err != nil {
+                        log.Fatal(err)
+                }
+                pprof.StartCPUProfile(f)
+                defer pprof.StopCPUProfile()
+                defer f.Close()
+        }
 
 		massagePath()
 
