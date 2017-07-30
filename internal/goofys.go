@@ -917,7 +917,6 @@ func (fs *Goofys) LookUpInode(
 	var inode *Inode
 	defer func() { fuseLog.Debugf("<-- LookUpInode %v %v %v", op.Parent, op.Name, err) }()
 
-	fuseLog.Debugln("0. look up inode", fs.flags.StatCacheTTL)
 	fs.mu.Lock()
 
 	parent := fs.getInodeOrDie(op.Parent)
@@ -926,12 +925,7 @@ func (fs *Goofys) LookUpInode(
 		inode.Ref()
 		expireTime := inode.AttrTime.Add(fs.flags.StatCacheTTL)
 		if !expireTime.After(time.Now()) {
-			fuseLog.Debugln("1. expire changed inode", *inode.FullName)
 			ok = false
-			inode.Unchanged = false
-		} else {
-			fuseLog.Debugln("2. not expire unchanged inode", *inode.FullName)
-			inode.Unchanged = true
 		}
 	}
 	fs.mu.Unlock()
@@ -958,17 +952,11 @@ func (fs *Goofys) LookUpInode(
 		if inode == nil {
 			fs.mu.Lock()
 			inode = newInode
-			inode.Unchanged = false
-			fuseLog.Debugln("3. new alloc inode", *inode.FullName)
 			inode.Id = fs.allocateInodeId()
 			fs.inodesCache[*inode.FullName] = inode
 			fs.inodes[inode.Id] = inode
 			fs.mu.Unlock()
 		} else {
-			if *inode.Attributes == *newInode.Attributes {
-				fuseLog.Debugln("4. Unchanged Mtime inode", *inode.FullName)
-				inode.Unchanged = true
-			}
 			inode.Attributes = newInode.Attributes
 			inode.AttrTime = time.Now()
 		}
@@ -1101,12 +1089,7 @@ func (fs *Goofys) OpenFile(
 	fs.fileHandles[handleID] = fh
 
 	op.Handle = handleID
-	if in.Unchanged {
-		op.KeepPageCache = true
-	} else {
-		op.KeepPageCache = false
-	}
-	in.Unchanged = true
+	op.KeepPageCache = true
 
 	return
 }

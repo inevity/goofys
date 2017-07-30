@@ -175,6 +175,7 @@ func massageArg0() {
 	}
 }
 
+var Version string
 func debug() {
     /*panic("coredump test")*/
     
@@ -188,7 +189,8 @@ func debug() {
 }
 
 func main() {
-        debug()
+	VersionHash = Version
+
 	app := NewApp()
 
 	var flags *FlagStorage

@@ -44,7 +44,6 @@ type Inode struct {
 	Attributes  *fuseops.InodeAttributes
 	KnownSize   *uint64
 	Invalid     bool
-	Unchanged  bool
 	AttrTime    time.Time
 	ImplicitDir bool
 
