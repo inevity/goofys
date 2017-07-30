@@ -799,23 +799,21 @@ func (fs *Goofys) allocateInodeId() (id fuseops.InodeID) {
 func (fs *Goofys) LookUpInodeMaybeDir(name string, fullName string) (inode *Inode, err error) {
 	errObjectChan := make(chan error, 1)
 	objectChan := make(chan s3.HeadObjectOutput, 1)
-	errDirBlobChan := make(chan error, 1)
-	dirBlobChan := make(chan s3.HeadObjectOutput, 1)
 	var errDirChan chan error
 	var dirChan chan s3.ListObjectsOutput
 
-	checking := 3
-	var checkErr [3]error
+	checking := 2
+	var checkErr [2]error
 
 	go fs.LookUpInodeNotDir(fullName, objectChan, errObjectChan)
 	if !fs.flags.Cheap {
-		go fs.LookUpInodeNotDir(fullName+"/", dirBlobChan, errDirBlobChan)
 		if !fs.flags.ExplicitDir {
 			errDirChan = make(chan error, 1)
 			dirChan = make(chan s3.ListObjectsOutput, 1)
 			go fs.LookUpInodeDir(fullName, dirChan, errDirChan)
 		}
 	}
+     
 
 	for {
 		select {
@@ -859,31 +857,15 @@ func (fs *Goofys) LookUpInodeMaybeDir(name string, fullName string) (inode *Inod
 				}
 				return
 			} else {
-				checkErr[2] = fuse.ENOENT
+				checkErr[1] = fuse.ENOENT
 				checking--
 			}
 		case err = <-errDirChan:
 			checking--
-			checkErr[2] = err
-			s3Log.Debugf("LIST %v/ = %v", fullName, err)
-		case resp := <-dirBlobChan:
-			err = nil
-			inode = NewInode(&name, &fullName, fs.flags)
-			inode.Attributes = &fs.rootAttrs
-			inode.KnownSize = &inode.Attributes.Size
-			inode.fillXattrFromHead(&resp)
-			return
-		case err = <-errDirBlobChan:
-			checking--
 			checkErr[1] = err
-			s3Log.Debugf("HEAD %v/ = %v", fullName, err)
 		}
 
 		switch checking {
-		case 2:
-			if fs.flags.Cheap {
-				go fs.LookUpInodeNotDir(fullName+"/", dirBlobChan, errDirBlobChan)
-			}
 		case 1:
 			if fs.flags.ExplicitDir {
 				checkErr[2] = fuse.ENOENT
