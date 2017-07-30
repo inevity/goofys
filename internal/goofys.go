@@ -135,29 +135,29 @@ func NewGoofys(bucket string, awsConfig *aws.Config, flags *FlagStorage) *Goofys
 	var isAws bool
 	var err error
 	/*if !fs.flags.RegionSet {
-        err, isAws = fs.detectBucketLocationByHEAD()
-		if err == nil {
-			// we detected a region header, this is probably AWS S3,
-			// or we can use anonymous access, or both
-			fs.sess = session.New(awsConfig)
-			fs.s3 = fs.newS3()
-		} else if err == fuse.ENOENT {
-			log.Errorf("bucket %v does not exist", fs.bucket)
-			return nil
-		} else {
-			// this is NOT AWS, we expect the request to fail with 403 if this is not
-			// an anonymous bucket, or if the provider doesn't support v4 signing, or both
-			// swift3 and ceph-s3 return 400 so we know we can fallback to v2 signing
-			// minio returns 403 because we are using anonymous credential
-			if err == fuse.EINVAL {
-				fs.fallbackV2Signer()
-			} else if err != syscall.EACCES {
-				log.Errorf("Unable to access '%v': %v", fs.bucket, err)
+	        err, isAws = fs.detectBucketLocationByHEAD()
+			if err == nil {
+				// we detected a region header, this is probably AWS S3,
+				// or we can use anonymous access, or both
+				fs.sess = session.New(awsConfig)
+				fs.s3 = fs.newS3()
+			} else if err == fuse.ENOENT {
+				log.Errorf("bucket %v does not exist", fs.bucket)
+				return nil
+			} else {
+				// this is NOT AWS, we expect the request to fail with 403 if this is not
+				// an anonymous bucket, or if the provider doesn't support v4 signing, or both
+				// swift3 and ceph-s3 return 400 so we know we can fallback to v2 signing
+				// minio returns 403 because we are using anonymous credential
+				if err == fuse.EINVAL {
+					fs.fallbackV2Signer()
+				} else if err != syscall.EACCES {
+					log.Errorf("Unable to access '%v': %v", fs.bucket, err)
+				}
 			}
-		}
-	}*/
-        fs.fallbackV2Signer()
-    
+		}*/
+	fs.fallbackV2Signer()
+
 	// try again with the credential to make sure
 	err = mapAwsError(fs.testBucket())
 	if err != nil {
@@ -917,6 +917,7 @@ func (fs *Goofys) LookUpInode(
 	var inode *Inode
 	defer func() { fuseLog.Debugf("<-- LookUpInode %v %v %v", op.Parent, op.Name, err) }()
 
+	fuseLog.Debugln("0. look up inode", fs.flags.StatCacheTTL)
 	fs.mu.Lock()
 
 	parent := fs.getInodeOrDie(op.Parent)
@@ -925,7 +926,12 @@ func (fs *Goofys) LookUpInode(
 		inode.Ref()
 		expireTime := inode.AttrTime.Add(fs.flags.StatCacheTTL)
 		if !expireTime.After(time.Now()) {
+			fuseLog.Debugln("1. expire changed inode", *inode.FullName)
 			ok = false
+			inode.Unchanged = false
+		} else {
+			fuseLog.Debugln("2. not expire unchanged inode", *inode.FullName)
+			inode.Unchanged = true
 		}
 	}
 	fs.mu.Unlock()
@@ -952,11 +958,17 @@ func (fs *Goofys) LookUpInode(
 		if inode == nil {
 			fs.mu.Lock()
 			inode = newInode
+			inode.Unchanged = false
+			fuseLog.Debugln("3. new alloc inode", *inode.FullName)
 			inode.Id = fs.allocateInodeId()
 			fs.inodesCache[*inode.FullName] = inode
 			fs.inodes[inode.Id] = inode
 			fs.mu.Unlock()
 		} else {
+			if *inode.Attributes == *newInode.Attributes {
+				fuseLog.Debugln("4. Unchanged Mtime inode", *inode.FullName)
+				inode.Unchanged = true
+			}
 			inode.Attributes = newInode.Attributes
 			inode.AttrTime = time.Now()
 		}
@@ -1089,7 +1101,12 @@ func (fs *Goofys) OpenFile(
 	fs.fileHandles[handleID] = fh
 
 	op.Handle = handleID
-	op.KeepPageCache = true
+	if in.Unchanged {
+		op.KeepPageCache = true
+	} else {
+		op.KeepPageCache = false
+	}
+	in.Unchanged = true
 
 	return
 }

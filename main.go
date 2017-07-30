@@ -210,15 +210,15 @@ func main() {
 		mountPoint := c.Args()[1]
 		flags = PopulateFlags(c)
 
-        if len(flags.Cpuprofile) > 0 {
-                f, err := os.Create(flags.Cpuprofile)
-                if err != nil {
-                        log.Fatal(err)
-                }
-                pprof.StartCPUProfile(f)
-                defer pprof.StopCPUProfile()
-                defer f.Close()
-        }
+		if len(flags.Cpuprofile) > 0 {
+			f, err := os.Create(flags.Cpuprofile)
+			if err != nil {
+				log.Fatal(err)
+			}
+			pprof.StartCPUProfile(f)
+			defer pprof.StopCPUProfile()
+			defer f.Close()
+		}
 
 		massagePath()
 
