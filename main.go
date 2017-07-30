@@ -45,8 +45,16 @@ import (
         "runtime/pprof"
         //"strconv"
         //"runtime"
+      // "log"
+      // "time"
+      "net/http"
+ 
+    //   "github.com/e-dard/netbug"
+
+       "github.com/google/gops/agent"
 )
 
+import  _ "net/http/pprof"
 var log = GetLogger("main")
 
 func registerSIGINTHandler(mountPoint string) {
@@ -189,6 +197,40 @@ func debug() {
 }
 
 func main() {
+     //   if err := agent.Listen(nil); err != nil {
+     // maybe define this options
+    // type Options struct {
+        // Addr is the host:port the agent will be listening at.
+        // Optional.
+   //     Addr string
+
+        // NoShutdownCleanup tells the agent not to automatically cleanup
+        // resources if the running process receives an interrupt.
+        // Optional.
+   //     NoShutdownCleanup bool
+   //    }
+//        var opts *agent.Options
+//       // var opts Options
+//       
+//        opts.Addr = ":48333"
+//1,type not redefine
+//2,declare var pointer,we need the origin var need inintail 
+        opts := &agent.Options{}
+        opts.Addr = ":48333"
+       
+        if err := agent.Listen(opts); err != nil {
+        //log.Fatal(err)
+        log.Fatalf("v%",err)
+        }
+//        r := http.NewServeMux()
+//      //  netbug.RegisterHandler("/myroute/", r)
+//        if err := http.ListenAndServe(":48334", r); err != nil {
+//            log.Fatalf("v%",err)
+//           // log.Fatal(err)
+//        }
+        go func() {
+	log.Println(http.ListenAndServe(":48334", nil))
+         }()
 	VersionHash = Version
 
 	app := NewApp()
