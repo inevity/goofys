@@ -122,8 +122,8 @@ func mount(
 		Logger: GetLogger("s3"),
 		//LogLevel: aws.LogLevel(aws.LogDebug),
                //  Logger:   aws.LoggerFunc(func(args ...interface{}) { log.Println(args) }),
-                LogLevel: aws.LogLevel(aws.LogDebugWithSigning),
-              //LogLevel:         aws.LogLevel(aws.LogDebug | aws.LogDebugWithRequestErrors | aws.LogDebugWithSigning),
+               //LogLevel: aws.LogLevel(aws.LogDebugWithSigning),
+               //LogLevel:         aws.LogLevel(aws.LogDebug | aws.LogDebugWithRequestErrors | aws.LogDebugWithSigning),
 
 	}
 
