@@ -132,7 +132,7 @@ func NewGoofys(bucket string, awsConfig *aws.Config, flags *FlagStorage) *Goofys
 	fs.sess = session.New(awsConfig)
 	fs.s3 = fs.newS3()
 
-	var isAws bool
+//	var isAws bool
 	var err error
 	/*if !fs.flags.RegionSet {
 	        err, isAws = fs.detectBucketLocationByHEAD()
@@ -159,24 +159,29 @@ func NewGoofys(bucket string, awsConfig *aws.Config, flags *FlagStorage) *Goofys
 	fs.fallbackV2Signer()
 
 	// try again with the credential to make sure
-	err = mapAwsError(fs.testBucket())
-	if err != nil {
-		if !isAws {
-			// EMC returns 403 because it doesn't support v4 signing
-			// Amplidata just gives up and return 500
-			if err == syscall.EACCES || err == syscall.EAGAIN {
-				fs.fallbackV2Signer()
-				err = mapAwsError(fs.testBucket())
-			}
-		}
-
-		if err != nil {
-			log.Errorf("Unable to access '%v': %v", fs.bucket, err)
-			return nil
-		}
-	}
-
-	go fs.cleanUpOldMPU()
+      
+//	err = mapAwsError(fs.testBucket())
+//	if err != nil {
+//		if !isAws {
+//			// EMC returns 403 because it doesn't support v4 signing
+//			// Amplidata just gives up and return 500
+//			if err == syscall.EACCES || err == syscall.EAGAIN {
+//				fs.fallbackV2Signer()
+//				err = mapAwsError(fs.testBucket())
+//			}
+//		}
+//
+//		if err != nil {
+//			log.Errorf("Unable to access '%v': %v", fs.bucket, err)
+//			return nil
+//		}
+//	}
+        //need return err to valid root accesskey ,and clean mpu 
+	//go fs.cleanUpOldMPU()
+	err = mapAwsError(fs.cleanUpOldMPU())
+        if err != nil {
+                return nil
+        }
 
 	if flags.UseKMS {
 		//SSE header string for KMS server-side encryption (SSE-KMS)
@@ -375,11 +380,11 @@ func (fs *Goofys) detectBucketLocationByHEAD() (err error, isAws bool) {
 	return
 }
 
-func (fs *Goofys) cleanUpOldMPU() {
+func (fs *Goofys) cleanUpOldMPU() error {
 	mpu, err := fs.s3.ListMultipartUploads(&s3.ListMultipartUploadsInput{Bucket: &fs.bucket})
 	if err != nil {
-		mapAwsError(err)
-		return
+		//mapAwsError(err)
+		return err
 	}
 	s3Log.Debug(mpu)
 
@@ -397,12 +402,13 @@ func (fs *Goofys) cleanUpOldMPU() {
 			s3Log.Debug(resp)
 
 			if mapAwsError(err) == syscall.EACCES {
-				break
+				return nil
 			}
 		} else {
 			s3Log.Debugf("Keeping MPU Key=%v Id=%v", *upload.Key, *upload.UploadId)
 		}
 	}
+        return nil
 }
 
 // Find the given inode. Panic if it doesn't exist.
