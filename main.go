@@ -31,6 +31,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 
 	"github.com/codegangsta/cli"
+        //go get github.com/urfave/cli
+        //"gopkg.in/urfave/cli.v1" 
 
 	"github.com/jacobsa/fuse"
 	"github.com/jacobsa/fuse/fuseutil"
@@ -119,6 +121,10 @@ func mount(
 		Region: &flags.Region,
 		Logger: GetLogger("s3"),
 		//LogLevel: aws.LogLevel(aws.LogDebug),
+               //  Logger:   aws.LoggerFunc(func(args ...interface{}) { log.Println(args) }),
+                LogLevel: aws.LogLevel(aws.LogDebugWithSigning),
+              //LogLevel:         aws.LogLevel(aws.LogDebug | aws.LogDebugWithRequestErrors | aws.LogDebugWithSigning),
+
 	}
 
 	if len(flags.Profile) > 0 {
