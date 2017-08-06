@@ -120,10 +120,6 @@ func mount(
 	awsConfig := &aws.Config{
 		Region: &flags.Region,
 		Logger: GetLogger("s3"),
-		//LogLevel: aws.LogLevel(aws.LogDebug),
-               //  Logger:   aws.LoggerFunc(func(args ...interface{}) { log.Println(args) }),
-               //LogLevel: aws.LogLevel(aws.LogDebugWithSigning),
-               //LogLevel:         aws.LogLevel(aws.LogDebug | aws.LogDebugWithRequestErrors | aws.LogDebugWithSigning),
 
 	}
 
@@ -203,24 +199,6 @@ func debug() {
 }
 
 func main() {
-     //   if err := agent.Listen(nil); err != nil {
-     // maybe define this options
-    // type Options struct {
-        // Addr is the host:port the agent will be listening at.
-        // Optional.
-   //     Addr string
-
-        // NoShutdownCleanup tells the agent not to automatically cleanup
-        // resources if the running process receives an interrupt.
-        // Optional.
-   //     NoShutdownCleanup bool
-   //    }
-//        var opts *agent.Options
-//       // var opts Options
-//       
-//        opts.Addr = ":48333"
-//1,type not redefine
-//2,declare var pointer,we need the origin var need inintail 
         opts := &agent.Options{}
         opts.Addr = ":48333"
        
@@ -228,14 +206,8 @@ func main() {
         //log.Fatal(err)
         log.Fatalf("v%",err)
         }
-//        r := http.NewServeMux()
-//      //  netbug.RegisterHandler("/myroute/", r)
-//        if err := http.ListenAndServe(":48334", r); err != nil {
-//            log.Fatalf("v%",err)
-//           // log.Fatal(err)
-//        }
         go func() {
-	log.Println(http.ListenAndServe(":48334", nil))
+	       http.ListenAndServe(":48334", nil)
          }()
 	VersionHash = Version
 

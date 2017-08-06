@@ -160,22 +160,6 @@ func NewGoofys(bucket string, awsConfig *aws.Config, flags *FlagStorage) *Goofys
 
 	// try again with the credential to make sure
       
-//	err = mapAwsError(fs.testBucket())
-//	if err != nil {
-//		if !isAws {
-//			// EMC returns 403 because it doesn't support v4 signing
-//			// Amplidata just gives up and return 500
-//			if err == syscall.EACCES || err == syscall.EAGAIN {
-//				fs.fallbackV2Signer()
-//				err = mapAwsError(fs.testBucket())
-//			}
-//		}
-//
-//		if err != nil {
-//			log.Errorf("Unable to access '%v': %v", fs.bucket, err)
-//			return nil
-//		}
-//	}
         //need return err to valid root accesskey ,and clean mpu 
 	//go fs.cleanUpOldMPU()
 	err = mapAwsError(fs.cleanUpOldMPU())
@@ -383,7 +367,6 @@ func (fs *Goofys) detectBucketLocationByHEAD() (err error, isAws bool) {
 func (fs *Goofys) cleanUpOldMPU() error {
 	mpu, err := fs.s3.ListMultipartUploads(&s3.ListMultipartUploadsInput{Bucket: &fs.bucket})
 	if err != nil {
-		//mapAwsError(err)
 		return err
 	}
 	s3Log.Debug(mpu)
