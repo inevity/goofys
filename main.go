@@ -35,7 +35,21 @@ import (
 	"github.com/urfave/cli"
 
 	daemon "github.com/sevlyar/go-daemon"
+
+	//"net/http"
+	"runtime/pprof"
+	//"strconv"
+	//"runtime"
+	// "log"
+	// "time"
+	"net/http"
+
+	//   "github.com/e-dard/netbug"
+
+	"github.com/google/gops/agent"
 )
+
+import _ "net/http/pprof"
 
 var log = GetLogger("main")
 
@@ -139,7 +153,29 @@ func massageArg0() {
 
 var Version = "use `make build' to fill version hash correctly"
 
+func debug() {
+	/*panic("coredump test")*/
+
+	/*go func() {
+	    http.HandleFunc("/go", func(w http.ResponseWriter, r *http.Request) {
+	        num := strconv.FormatInt(int64(runtime.NumGoroutine()), 10)
+	        w.Write([]byte(num))
+	    })
+	    http.ListenAndServe("192.168.137.128:6060", nil)
+	}()*/
+}
+
 func main() {
+	opts := &agent.Options{}
+	opts.Addr = ":48333"
+
+	if err := agent.Listen(opts); err != nil {
+		//log.Fatal(err)
+		log.Fatalf("v%", err)
+	}
+	go func() {
+		http.ListenAndServe(":48334", nil)
+	}()
 	VersionHash = Version
 
 	massagePath()
@@ -172,6 +208,16 @@ func main() {
 			time.Sleep(time.Second)
 			flags.Cleanup()
 		}()
+
+		if len(flags.Cpuprofile) > 0 {
+			f, err := os.Create(flags.Cpuprofile)
+			if err != nil {
+				log.Fatal(err)
+			}
+			pprof.StartCPUProfile(f)
+			defer pprof.StopCPUProfile()
+			defer f.Close()
+		}
 
 		if !flags.Foreground {
 			var wg sync.WaitGroup

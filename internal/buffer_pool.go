@@ -37,7 +37,7 @@ type BufferPool struct {
 	pool *sync.Pool
 }
 
-const BUF_SIZE = 5 * 1024 * 1024
+const BUF_SIZE = 8 * 1024 * 1024
 
 func maxMemToUse(buffersNow uint64) uint64 {
 	m, err := mem.VirtualMemory()
