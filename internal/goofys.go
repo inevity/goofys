@@ -122,7 +122,7 @@ func NewGoofys(ctx context.Context, bucket string, awsConfig *aws.Config, flags 
 	}
 
 	if flags.DebugS3 {
-		awsConfig.LogLevel = aws.LogLevel(aws.LogDebug | aws.LogDebugWithRequestErrors)
+		awsConfig.LogLevel = aws.LogLevel(aws.LogDebug | aws.LogDebugWithRequestErrors | aws.LogDebugWithSigning)
 		s3Log.Level = logrus.DebugLevel
 	}
 
@@ -130,50 +130,40 @@ func NewGoofys(ctx context.Context, bucket string, awsConfig *aws.Config, flags 
 	fs.sess = session.New(awsConfig)
 	fs.s3 = fs.newS3()
 
-	var isAws bool
+	//	var isAws bool
 	var err error
-	if !fs.flags.RegionSet {
-		err, isAws = fs.detectBucketLocationByHEAD()
-		if err == nil {
-			// we detected a region header, this is probably AWS S3,
-			// or we can use anonymous access, or both
-			fs.sess = session.New(awsConfig)
-			fs.s3 = fs.newS3()
-		} else if err == fuse.ENOENT {
-			log.Errorf("bucket %v does not exist", fs.bucket)
-			return nil
-		} else {
-			// this is NOT AWS, we expect the request to fail with 403 if this is not
-			// an anonymous bucket, or if the provider doesn't support v4 signing, or both
-			// swift3 and ceph-s3 return 400 so we know we can fallback to v2 signing
-			// minio returns 403 because we are using anonymous credential
-			if err == fuse.EINVAL {
-				fs.fallbackV2Signer()
-			} else if err != syscall.EACCES {
-				log.Errorf("Unable to access '%v': %v", fs.bucket, err)
+	/*if !fs.flags.RegionSet {
+	        err, isAws = fs.detectBucketLocationByHEAD()
+			if err == nil {
+				// we detected a region header, this is probably AWS S3,
+				// or we can use anonymous access, or both
+				fs.sess = session.New(awsConfig)
+				fs.s3 = fs.newS3()
+			} else if err == fuse.ENOENT {
+				log.Errorf("bucket %v does not exist", fs.bucket)
+				return nil
+			} else {
+				// this is NOT AWS, we expect the request to fail with 403 if this is not
+				// an anonymous bucket, or if the provider doesn't support v4 signing, or both
+				// swift3 and ceph-s3 return 400 so we know we can fallback to v2 signing
+				// minio returns 403 because we are using anonymous credential
+				if err == fuse.EINVAL {
+					fs.fallbackV2Signer()
+				} else if err != syscall.EACCES {
+					log.Errorf("Unable to access '%v': %v", fs.bucket, err)
+				}
 			}
-		}
-	}
+		}*/
+	fs.fallbackV2Signer()
 
 	// try again with the credential to make sure
-	err = mapAwsError(fs.testBucket())
+
+	//need return err to valid root accesskey ,and clean mpu
+	//go fs.cleanUpOldMPU()
+	err = mapAwsError(fs.cleanUpOldMPU())
 	if err != nil {
-		if !isAws {
-			// EMC returns 403 because it doesn't support v4 signing
-			// Amplidata just gives up and return 500
-			if err == syscall.EACCES || err == syscall.EAGAIN {
-				fs.fallbackV2Signer()
-				err = mapAwsError(fs.testBucket())
-			}
-		}
-
-		if err != nil {
-			log.Errorf("Unable to access '%v': %v", fs.bucket, err)
-			return nil
-		}
+		return nil
 	}
-
-	go fs.cleanUpOldMPU()
 
 	if flags.UseKMS {
 		//SSE header string for KMS server-side encryption (SSE-KMS)
@@ -368,11 +358,10 @@ func (fs *Goofys) detectBucketLocationByHEAD() (err error, isAws bool) {
 	return
 }
 
-func (fs *Goofys) cleanUpOldMPU() {
+func (fs *Goofys) cleanUpOldMPU() error {
 	mpu, err := fs.s3.ListMultipartUploads(&s3.ListMultipartUploadsInput{Bucket: &fs.bucket})
 	if err != nil {
-		mapAwsError(err)
-		return
+		return err
 	}
 	s3Log.Debug(mpu)
 
@@ -390,12 +379,13 @@ func (fs *Goofys) cleanUpOldMPU() {
 			s3Log.Debug(resp)
 
 			if mapAwsError(err) == syscall.EACCES {
-				break
+				return nil
 			}
 		} else {
 			s3Log.Debugf("Keeping MPU Key=%v Id=%v", *upload.Key, *upload.UploadId)
 		}
 	}
+	return nil
 }
 
 // Find the given inode. Panic if it doesn't exist.

@@ -1046,8 +1046,8 @@ func (parent *Inode) LookUpInodeMaybeDir(name string, fullName string) (inode *I
 	var errDirChan chan error
 	var dirChan chan s3.ListObjectsOutput
 
-	checking := 3
-	var checkErr [3]error
+	checking := 2
+	var checkErr [2]error
 
 	if parent.fs.s3 == nil {
 		panic("s3 disabled")
@@ -1055,7 +1055,7 @@ func (parent *Inode) LookUpInodeMaybeDir(name string, fullName string) (inode *I
 
 	go parent.LookUpInodeNotDir(fullName, objectChan, errObjectChan)
 	if !parent.fs.flags.Cheap {
-		go parent.LookUpInodeNotDir(fullName+"/", dirBlobChan, errDirBlobChan)
+		//go parent.LookUpInodeNotDir(fullName+"/", dirBlobChan, errDirBlobChan)
 		if !parent.fs.flags.ExplicitDir {
 			errDirChan = make(chan error, 1)
 			dirChan = make(chan s3.ListObjectsOutput, 1)
@@ -1108,33 +1108,37 @@ func (parent *Inode) LookUpInodeMaybeDir(name string, fullName string) (inode *I
 				}
 				return
 			} else {
-				checkErr[2] = fuse.ENOENT
+				checkErr[1] = fuse.ENOENT
 				checking--
 			}
-		case err = <-errDirChan:
-			checking--
-			checkErr[2] = err
-			s3Log.Debugf("LIST %v/ = %v", fullName, err)
-		case resp := <-dirBlobChan:
-			err = nil
-			inode = NewInode(parent.fs, parent, &name, &fullName)
-			inode.ToDir()
-			inode.fillXattrFromHead(&resp)
-			return
-		case err = <-errDirBlobChan:
-			checking--
-			checkErr[1] = err
-			s3Log.Debugf("HEAD %v/ = %v", fullName, err)
+			/*
+			 *case err = <-errDirChan:
+			 *    checking--
+			 *    checkErr[2] = err
+			 *    s3Log.Debugf("LIST %v/ = %v", fullName, err)
+			 *case resp := <-dirBlobChan:
+			 *    err = nil
+			 *    inode = NewInode(parent.fs, parent, &name, &fullName)
+			 *    inode.ToDir()
+			 *    inode.fillXattrFromHead(&resp)
+			 *    return
+			 *case err = <-errDirBlobChan:
+			 *    checking--
+			 *    checkErr[1] = err
+			 *    s3Log.Debugf("HEAD %v/ = %v", fullName, err)
+			 */
 		}
 
 		switch checking {
-		case 2:
-			if parent.fs.flags.Cheap {
-				go parent.LookUpInodeNotDir(fullName+"/", dirBlobChan, errDirBlobChan)
-			}
+		/*
+		 *case 2:
+		 *    if parent.fs.flags.Cheap {
+		 *        go parent.LookUpInodeNotDir(fullName+"/", dirBlobChan, errDirBlobChan)
+		 *    }
+		 */
 		case 1:
 			if parent.fs.flags.ExplicitDir {
-				checkErr[2] = fuse.ENOENT
+				checkErr[1] = fuse.ENOENT
 				goto doneCase
 			} else if parent.fs.flags.Cheap {
 				errDirChan = make(chan error, 1)
