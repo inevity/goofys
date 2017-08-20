@@ -1,0 +1,105 @@
+From 2ce076b83275089d1582b74df524a2919956777f Mon Sep 17 00:00:00 2001
+From: huoyuanguo <huoyuanguo@dnion.com>
+Date: Tue, 1 Aug 2017 05:22:43 +0000
+Subject: [PATCH 5/6] 1. remove HEAD filename/ request, because in our
+ stor-proxy objectname cannot end with /; 2. change multiupload part size to
+ 8M
+
+git-svn-id: http://192.168.88.85/svn/STORAGE_PRODUCT@869 6426301c-50a1-453f-bbdf-8bde4b0e49f6
+---
+ fs/goofys-0.0.13/internal/buffer_pool.go |  2 +-
+ fs/goofys-0.0.13/internal/goofys.go      | 22 +++-------------------
+ fs/goofys-0.0.13/internal/handles.go     |  8 +-------
+ 3 files changed, 5 insertions(+), 27 deletions(-)
+
+diff --git a/fs/goofys-0.0.13/internal/buffer_pool.go b/fs/goofys-0.0.13/internal/buffer_pool.go
+index 7444cd7..4eea78d 100644
+--- a/fs/goofys-0.0.13/internal/buffer_pool.go
++++ b/fs/goofys-0.0.13/internal/buffer_pool.go
+@@ -37,7 +37,7 @@ type BufferPool struct {
+ 	pool *sync.Pool
+ }
+ 
+-const BUF_SIZE = 5 * 1024 * 1024
++const BUF_SIZE = 8 * 1024 * 1024
+ 
+ func maxMemToUse(buffersNow uint64) uint64 {
+ 	m, err := mem.VirtualMemory()
+diff --git a/fs/goofys-0.0.13/internal/goofys.go b/fs/goofys-0.0.13/internal/goofys.go
+index cc26559..fda8b44 100644
+--- a/fs/goofys-0.0.13/internal/goofys.go
++++ b/fs/goofys-0.0.13/internal/goofys.go
+@@ -716,19 +716,16 @@ func (fs *Goofys) allocateInodeId() (id fuseops.InodeID) {
+ func (fs *Goofys) LookUpInodeMaybeDir(name string, fullName string) (inode *Inode, err error) {
+ 	errObjectChan := make(chan error, 1)
+ 	objectChan := make(chan s3.HeadObjectOutput, 1)
+-	errDirBlobChan := make(chan error, 1)
+-	dirBlobChan := make(chan s3.HeadObjectOutput, 1)
+ 	errDirChan := make(chan error, 1)
+ 	dirChan := make(chan s3.ListObjectsOutput, 1)
+ 
+ 	go fs.LookUpInodeNotDir(fullName, objectChan, errObjectChan)
+ 	if !fs.flags.Cheap {
+-		go fs.LookUpInodeNotDir(fullName+"/", dirBlobChan, errDirBlobChan)
+ 		go fs.LookUpInodeDir(fullName, dirChan, errDirChan)
+ 	}
+ 
+-	checking := 3
+-	var checkErr [3]error
++	checking := 2
++	var checkErr [2]error
+ 
+ 	for {
+ 		select {
+@@ -764,28 +761,15 @@ func (fs *Goofys) LookUpInodeMaybeDir(name string, fullName string) (inode *Inod
+ 				inode.KnownSize = &inode.Attributes.Size
+ 				return
+ 			} else {
+-				checkErr[2] = fuse.ENOENT
++				checkErr[1] = fuse.ENOENT
+ 				checking--
+ 			}
+ 		case err = <-errDirChan:
+ 			checking--
+-			checkErr[2] = err
+-		case _ = <-dirBlobChan:
+-			err = nil
+-			inode = NewInode(&name, &fullName, fs.flags)
+-			inode.Attributes = &fs.rootAttrs
+-			inode.KnownSize = &inode.Attributes.Size
+-			return
+-		case err = <-errDirBlobChan:
+-			checking--
+ 			checkErr[1] = err
+ 		}
+ 
+ 		switch checking {
+-		case 2:
+-			if fs.flags.Cheap {
+-				go fs.LookUpInodeNotDir(fullName+"/", dirBlobChan, errDirBlobChan)
+-			}
+ 		case 1:
+ 			if fs.flags.Cheap {
+ 				go fs.LookUpInodeDir(fullName, dirChan, errDirChan)
+diff --git a/fs/goofys-0.0.13/internal/handles.go b/fs/goofys-0.0.13/internal/handles.go
+index 38462fd..9ea62f4 100644
+--- a/fs/goofys-0.0.13/internal/handles.go
++++ b/fs/goofys-0.0.13/internal/handles.go
+@@ -493,13 +493,7 @@ func (fh *FileHandle) waitForCreateMPU(fs *Goofys) (err error) {
+ }
+ 
+ func (fh *FileHandle) partSize() uint64 {
+-	if fh.lastPartId < 1000 {
+-		return 5 * 1024 * 1024
+-	} else if fh.lastPartId < 2000 {
+-		return 25 * 1024 * 1024
+-	} else {
+-		return 125 * 1024 * 1024
+-	}
++	return 8 * 1024 * 1024
+ }
+ 
+ func (fh *FileHandle) WriteFile(fs *Goofys, offset int64, data []byte) (err error) {
+-- 
+1.8.3.1
+

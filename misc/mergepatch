@@ -1,0 +1,356 @@
+diff --git a/internal/buffer_pool.go b/internal/buffer_pool.go
+index 7444cd7..4eea78d 100644
+--- a/internal/buffer_pool.go
++++ b/internal/buffer_pool.go
+@@ -37,7 +37,7 @@ type BufferPool struct {
+ 	pool *sync.Pool
+ }
+ 
+-const BUF_SIZE = 5 * 1024 * 1024
++const BUF_SIZE = 8 * 1024 * 1024
+ 
+ func maxMemToUse(buffersNow uint64) uint64 {
+ 	m, err := mem.VirtualMemory()
+diff --git a/internal/flags.go b/internal/flags.go
+index 9d0658c..fceae20 100644
+--- a/internal/flags.go
++++ b/internal/flags.go
+@@ -218,6 +218,12 @@ func NewApp() (app *cli.App) {
+ 				Usage: "Enable S3-related debugging output.",
+ 			},
+ 
++			cli.StringFlag{
++				Name:  "cpuprofile",
++				Value: "",
++				Usage: "pprof debug file name",
++			},
++
+ 			cli.BoolFlag{
+ 				Name:  "f",
+ 				Usage: "Run goofys in foreground.",
+@@ -278,6 +284,7 @@ type FlagStorage struct {
+ 	// Debugging
+ 	DebugFuse  bool
+ 	DebugS3    bool
++	Cpuprofile string   
+ 	Foreground bool
+ }
+ 
+@@ -336,6 +343,7 @@ func PopulateFlags(c *cli.Context) (flags *FlagStorage) {
+ 		// Debugging,
+ 		DebugFuse:  c.Bool("debug_fuse"),
+ 		DebugS3:    c.Bool("debug_s3"),
++		Cpuprofile: c.String("cpuprofile"),
+ 		Foreground: c.Bool("f"),
+ 	}
+ 
+diff --git a/internal/goofys.go b/internal/goofys.go
+index 4438dec..b17b1b2 100644
+--- a/internal/goofys.go
++++ b/internal/goofys.go
+@@ -124,7 +124,7 @@ func NewGoofys(bucket string, awsConfig *aws.Config, flags *FlagStorage) *Goofys
+ 	}
+ 
+ 	if flags.DebugS3 {
+-		awsConfig.LogLevel = aws.LogLevel(aws.LogDebug | aws.LogDebugWithRequestErrors)
++		awsConfig.LogLevel = aws.LogLevel(aws.LogDebug | aws.LogDebugWithRequestErrors | aws.LogDebugWithSigning)
+ 		s3Log.Level = logrus.DebugLevel
+ 	}
+ 
+@@ -132,50 +132,40 @@ func NewGoofys(bucket string, awsConfig *aws.Config, flags *FlagStorage) *Goofys
+ 	fs.sess = session.New(awsConfig)
+ 	fs.s3 = fs.newS3()
+ 
+-	var isAws bool
++//	var isAws bool
+ 	var err error
+-	if !fs.flags.RegionSet {
+-		err, isAws = fs.detectBucketLocationByHEAD()
+-		if err == nil {
+-			// we detected a region header, this is probably AWS S3,
+-			// or we can use anonymous access, or both
+-			fs.sess = session.New(awsConfig)
+-			fs.s3 = fs.newS3()
+-		} else if err == fuse.ENOENT {
+-			log.Errorf("bucket %v does not exist", fs.bucket)
+-			return nil
+-		} else {
+-			// this is NOT AWS, we expect the request to fail with 403 if this is not
+-			// an anonymous bucket, or if the provider doesn't support v4 signing, or both
+-			// swift3 and ceph-s3 return 400 so we know we can fallback to v2 signing
+-			// minio returns 403 because we are using anonymous credential
+-			if err == fuse.EINVAL {
+-				fs.fallbackV2Signer()
+-			} else if err != syscall.EACCES {
+-				log.Errorf("Unable to access '%v': %v", fs.bucket, err)
++	/*if !fs.flags.RegionSet {
++	        err, isAws = fs.detectBucketLocationByHEAD()
++			if err == nil {
++				// we detected a region header, this is probably AWS S3,
++				// or we can use anonymous access, or both
++				fs.sess = session.New(awsConfig)
++				fs.s3 = fs.newS3()
++			} else if err == fuse.ENOENT {
++				log.Errorf("bucket %v does not exist", fs.bucket)
++				return nil
++			} else {
++				// this is NOT AWS, we expect the request to fail with 403 if this is not
++				// an anonymous bucket, or if the provider doesn't support v4 signing, or both
++				// swift3 and ceph-s3 return 400 so we know we can fallback to v2 signing
++				// minio returns 403 because we are using anonymous credential
++				if err == fuse.EINVAL {
++					fs.fallbackV2Signer()
++				} else if err != syscall.EACCES {
++					log.Errorf("Unable to access '%v': %v", fs.bucket, err)
++				}
+ 			}
+-		}
+-	}
++		}*/
++	fs.fallbackV2Signer()
+ 
+ 	// try again with the credential to make sure
+-	err = mapAwsError(fs.testBucket())
+-	if err != nil {
+-		if !isAws {
+-			// EMC returns 403 because it doesn't support v4 signing
+-			// Amplidata just gives up and return 500
+-			if err == syscall.EACCES || err == syscall.EAGAIN {
+-				fs.fallbackV2Signer()
+-				err = mapAwsError(fs.testBucket())
+-			}
+-		}
+-
+-		if err != nil {
+-			log.Errorf("Unable to access '%v': %v", fs.bucket, err)
+-			return nil
+-		}
+-	}
+-
+-	go fs.cleanUpOldMPU()
++      
++        //need return err to valid root accesskey ,and clean mpu 
++	//go fs.cleanUpOldMPU()
++	err = mapAwsError(fs.cleanUpOldMPU())
++        if err != nil {
++                return nil
++        }
+ 
+ 	if flags.UseKMS {
+ 		//SSE header string for KMS server-side encryption (SSE-KMS)
+@@ -374,11 +364,10 @@ func (fs *Goofys) detectBucketLocationByHEAD() (err error, isAws bool) {
+ 	return
+ }
+ 
+-func (fs *Goofys) cleanUpOldMPU() {
++func (fs *Goofys) cleanUpOldMPU() error {
+ 	mpu, err := fs.s3.ListMultipartUploads(&s3.ListMultipartUploadsInput{Bucket: &fs.bucket})
+ 	if err != nil {
+-		mapAwsError(err)
+-		return
++		return err
+ 	}
+ 	s3Log.Debug(mpu)
+ 
+@@ -396,12 +385,13 @@ func (fs *Goofys) cleanUpOldMPU() {
+ 			s3Log.Debug(resp)
+ 
+ 			if mapAwsError(err) == syscall.EACCES {
+-				break
++				return nil
+ 			}
+ 		} else {
+ 			s3Log.Debugf("Keeping MPU Key=%v Id=%v", *upload.Key, *upload.UploadId)
+ 		}
+ 	}
++        return nil
+ }
+ 
+ // Find the given inode. Panic if it doesn't exist.
+@@ -798,23 +788,21 @@ func (fs *Goofys) allocateInodeId() (id fuseops.InodeID) {
+ func (fs *Goofys) LookUpInodeMaybeDir(name string, fullName string) (inode *Inode, err error) {
+ 	errObjectChan := make(chan error, 1)
+ 	objectChan := make(chan s3.HeadObjectOutput, 1)
+-	errDirBlobChan := make(chan error, 1)
+-	dirBlobChan := make(chan s3.HeadObjectOutput, 1)
+ 	var errDirChan chan error
+ 	var dirChan chan s3.ListObjectsOutput
+ 
+-	checking := 3
+-	var checkErr [3]error
++	checking := 2
++	var checkErr [2]error
+ 
+ 	go fs.LookUpInodeNotDir(fullName, objectChan, errObjectChan)
+ 	if !fs.flags.Cheap {
+-		go fs.LookUpInodeNotDir(fullName+"/", dirBlobChan, errDirBlobChan)
+ 		if !fs.flags.ExplicitDir {
+ 			errDirChan = make(chan error, 1)
+ 			dirChan = make(chan s3.ListObjectsOutput, 1)
+ 			go fs.LookUpInodeDir(fullName, dirChan, errDirChan)
+ 		}
+ 	}
++     
+ 
+ 	for {
+ 		select {
+@@ -858,34 +846,18 @@ func (fs *Goofys) LookUpInodeMaybeDir(name string, fullName string) (inode *Inod
+ 				}
+ 				return
+ 			} else {
+-				checkErr[2] = fuse.ENOENT
++				checkErr[1] = fuse.ENOENT
+ 				checking--
+ 			}
+ 		case err = <-errDirChan:
+ 			checking--
+-			checkErr[2] = err
+-			s3Log.Debugf("LIST %v/ = %v", fullName, err)
+-		case resp := <-dirBlobChan:
+-			err = nil
+-			inode = NewInode(&name, &fullName, fs.flags)
+-			inode.Attributes = &fs.rootAttrs
+-			inode.KnownSize = &inode.Attributes.Size
+-			inode.fillXattrFromHead(&resp)
+-			return
+-		case err = <-errDirBlobChan:
+-			checking--
+ 			checkErr[1] = err
+-			s3Log.Debugf("HEAD %v/ = %v", fullName, err)
+ 		}
+ 
+ 		switch checking {
+-		case 2:
+-			if fs.flags.Cheap {
+-				go fs.LookUpInodeNotDir(fullName+"/", dirBlobChan, errDirBlobChan)
+-			}
+ 		case 1:
+ 			if fs.flags.ExplicitDir {
+-				checkErr[2] = fuse.ENOENT
++				checkErr[1] = fuse.ENOENT
+ 				goto doneCase
+ 			} else if fs.flags.Cheap {
+ 				errDirChan = make(chan error, 1)
+diff --git a/internal/handles.go b/internal/handles.go
+index f303a07..f58254e 100644
+--- a/internal/handles.go
++++ b/internal/handles.go
+@@ -712,13 +712,7 @@ func (fh *FileHandle) waitForCreateMPU(fs *Goofys) (err error) {
+ }
+ 
+ func (fh *FileHandle) partSize() uint64 {
+-	if fh.lastPartId < 1000 {
+-		return 5 * 1024 * 1024
+-	} else if fh.lastPartId < 2000 {
+-		return 25 * 1024 * 1024
+-	} else {
+-		return 125 * 1024 * 1024
+-	}
++	return 8 * 1024 * 1024
+ }
+ 
+ func (fh *FileHandle) WriteFile(fs *Goofys, offset int64, data []byte) (err error) {
+diff --git a/internal/v2signer.go b/internal/v2signer.go
+index c832146..53174c6 100644
+--- a/internal/v2signer.go
++++ b/internal/v2signer.go
+@@ -39,7 +39,7 @@ var (
+ const (
+ 	signatureVersion = "2"
+ 	signatureMethod  = "HmacSHA1"
+-	timeFormat       = "Mon, 2 Jan 2006 15:04:05 +0000"
++	timeFormat       = "Mon, 02 Jan 2006 15:04:05 +0000"
+ )
+ 
+ var subresources = []string{
+diff --git a/main.go b/main.go
+index 47a0a2b..a394eed 100644
+--- a/main.go
++++ b/main.go
+@@ -31,6 +31,8 @@ import (
+ 	"github.com/aws/aws-sdk-go/aws/credentials"
+ 
+ 	"github.com/codegangsta/cli"
++        //go get github.com/urfave/cli
++        //"gopkg.in/urfave/cli.v1" 
+ 
+ 	"github.com/jacobsa/fuse"
+ 	"github.com/jacobsa/fuse/fuseutil"
+@@ -40,8 +42,21 @@ import (
+ 	"github.com/sirupsen/logrus"
+ 
+ 	daemon "github.com/sevlyar/go-daemon"
++
++        //"net/http"
++        "runtime/pprof"
++        //"strconv"
++        //"runtime"
++      // "log"
++      // "time"
++      "net/http"
++ 
++    //   "github.com/e-dard/netbug"
++
++       "github.com/google/gops/agent"
+ )
+ 
++import  _ "net/http/pprof"
+ var log = GetLogger("main")
+ 
+ func registerSIGINTHandler(mountPoint string) {
+@@ -105,7 +120,7 @@ func mount(
+ 	awsConfig := &aws.Config{
+ 		Region: &flags.Region,
+ 		Logger: GetLogger("s3"),
+-		//LogLevel: aws.LogLevel(aws.LogDebug),
++
+ 	}
+ 
+ 	if len(flags.Profile) > 0 {
+@@ -171,8 +186,29 @@ func massageArg0() {
+ }
+ 
+ var Version string
++func debug() {
++    /*panic("coredump test")*/
++    
++    /*go func() {
++        http.HandleFunc("/go", func(w http.ResponseWriter, r *http.Request) {
++            num := strconv.FormatInt(int64(runtime.NumGoroutine()), 10)
++            w.Write([]byte(num))
++        })
++        http.ListenAndServe("192.168.137.128:6060", nil)
++    }()*/
++}
+ 
+ func main() {
++        opts := &agent.Options{}
++        opts.Addr = ":48333"
++       
++        if err := agent.Listen(opts); err != nil {
++        //log.Fatal(err)
++        log.Fatalf("v%",err)
++        }
++        go func() {
++	       http.ListenAndServe(":48334", nil)
++         }()
+ 	VersionHash = Version
+ 
+ 	app := NewApp()
+@@ -196,6 +232,16 @@ func main() {
+ 		mountPoint := c.Args()[1]
+ 		flags = PopulateFlags(c)
+ 
++		if len(flags.Cpuprofile) > 0 {
++			f, err := os.Create(flags.Cpuprofile)
++			if err != nil {
++				log.Fatal(err)
++			}
++			pprof.StartCPUProfile(f)
++			defer pprof.StopCPUProfile()
++			defer f.Close()
++		}
++
+ 		massagePath()
+ 
+ 		if !flags.Foreground {

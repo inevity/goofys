@@ -1,0 +1,106 @@
+From b2d9f456951445c6e35e3c06ec3d05bce6dba811 Mon Sep 17 00:00:00 2001
+From: chentao <chentao@dnion.com>
+Date: Mon, 10 Jul 2017 10:46:08 +0000
+Subject: [PATCH 3/6] git-svn-id: http://192.168.88.85/svn/STORAGE_PRODUCT@838
+ 6426301c-50a1-453f-bbdf-8bde4b0e49f6
+
+---
+ fs/goofys-0.0.13/internal/goofys.go  | 19 +------------------
+ fs/goofys-0.0.13/internal/handles.go |  1 -
+ fs/goofys-0.0.13/main.go             |  4 +++-
+ 3 files changed, 4 insertions(+), 20 deletions(-)
+
+diff --git a/fs/goofys-0.0.13/internal/goofys.go b/fs/goofys-0.0.13/internal/goofys.go
+index 3055610..cc26559 100644
+--- a/fs/goofys-0.0.13/internal/goofys.go
++++ b/fs/goofys-0.0.13/internal/goofys.go
+@@ -808,7 +808,6 @@ func (fs *Goofys) LookUpInode(
+ 	ctx context.Context,
+ 	op *fuseops.LookUpInodeOp) (err error) {
+ 
+-	fuseLog.Debugln("0. look up inode", fs.flags.StatCacheTTL)
+ 	fs.mu.Lock()
+ 
+ 	parent := fs.getInodeOrDie(op.Parent)
+@@ -817,12 +816,7 @@ func (fs *Goofys) LookUpInode(
+ 		inode.Ref()
+ 		expireTime := inode.AttrTime.Add(fs.flags.StatCacheTTL)
+ 		if !expireTime.After(time.Now()) {
+-			fuseLog.Debugln("1. expire changed inode", *inode.FullName)
+ 			ok = false
+-			inode.Unchanged = false
+-		} else {
+-			fuseLog.Debugln("2. not expire unchanged inode", *inode.FullName)
+-			inode.Unchanged = true
+ 		}
+ 	}
+ 	fs.mu.Unlock()
+@@ -849,17 +843,11 @@ func (fs *Goofys) LookUpInode(
+ 		if inode == nil {
+ 			fs.mu.Lock()
+ 			inode = newInode
+-			inode.Unchanged = false
+-			fuseLog.Debugln("3. new alloc inode", *inode.FullName)
+ 			inode.Id = fs.allocateInodeId()
+ 			fs.inodesCache[*inode.FullName] = inode
+ 			fs.inodes[inode.Id] = inode
+ 			fs.mu.Unlock()
+ 		} else {
+-			if *inode.Attributes == *newInode.Attributes {
+-				fuseLog.Debugln("4. Unchanged Mtime inode", *inode.FullName)
+-				inode.Unchanged = true
+-			}
+ 			inode.Attributes = newInode.Attributes
+ 			inode.AttrTime = time.Now()
+ 		}
+@@ -994,12 +982,7 @@ func (fs *Goofys) OpenFile(
+ 	fs.fileHandles[handleID] = fh
+ 
+ 	op.Handle = handleID
+-	if in.Unchanged {
+-		op.KeepPageCache = true
+-	} else {
+-		op.KeepPageCache = false
+-	}
+-	in.Unchanged = true
++	op.KeepPageCache = true
+ 
+ 	return
+ }
+diff --git a/fs/goofys-0.0.13/internal/handles.go b/fs/goofys-0.0.13/internal/handles.go
+index 29a8b7d..38462fd 100644
+--- a/fs/goofys-0.0.13/internal/handles.go
++++ b/fs/goofys-0.0.13/internal/handles.go
+@@ -41,7 +41,6 @@ type Inode struct {
+ 	Attributes *fuseops.InodeAttributes
+ 	KnownSize  *uint64
+ 	Invalid    bool
+-	Unchanged  bool
+ 	AttrTime   time.Time
+ 
+ 	Metadata map[string]*string
+diff --git a/fs/goofys-0.0.13/main.go b/fs/goofys-0.0.13/main.go
+index 32ae485..6546253 100644
+--- a/fs/goofys-0.0.13/main.go
++++ b/fs/goofys-0.0.13/main.go
+@@ -175,6 +175,7 @@ func massageArg0() {
+ 	}
+ }
+ 
++var Version string
+ func debug() {
+     /*panic("coredump test")*/
+     
+@@ -188,7 +189,8 @@ func debug() {
+ }
+ 
+ func main() {
+-        debug()
++	VersionHash = Version
++
+ 	app := NewApp()
+ 
+ 	var flags *FlagStorage
+-- 
+1.8.3.1
+

@@ -1,0 +1,611 @@
+From 4aa1d02d67420d83dcf3b0771e076ed5bdf5fa70 Mon Sep 17 00:00:00 2001
+From: chentao <chentao@dnion.com>
+Date: Mon, 3 Jul 2017 06:51:50 +0000
+Subject: [PATCH 1/6] description: update goofys to v0.0.13
+
+git-svn-id: http://192.168.88.85/svn/STORAGE_PRODUCT@816 6426301c-50a1-453f-bbdf-8bde4b0e49f6
+---
+ fs/goofys-0.0.13/internal/flags.go    |  8 ++++++++
+ fs/goofys-0.0.13/internal/goofys.go   |  9 +++++----
+ fs/goofys-0.0.13/internal/v2signer.go |  2 +-
+ fs/goofys-0.0.13/main.go              | 30 +++++++++++++++++++++++++++---
+ 4 files changed, 41 insertions(+), 8 deletions(-)
+
+diff --git a/fs/goofys-0.0.13/internal/flags.go b/fs/goofys-0.0.13/internal/flags.go
+index 469c111..bc8f9a4 100644
+--- a/fs/goofys-0.0.13/internal/flags.go
++++ b/fs/goofys-0.0.13/internal/flags.go
+@@ -213,6 +213,12 @@ func NewApp() (app *cli.App) {
+ 				Usage: "Enable S3-related debugging output.",
+ 			},
+ 
++			cli.StringFlag{
++				Name:  "cpuprofile",
++				Value: "",
++				Usage: "pprof debug file name",
++			},
++
+ 			cli.BoolFlag{
+ 				Name:  "f",
+ 				Usage: "Run goofys in foreground.",
+@@ -272,6 +278,7 @@ type FlagStorage struct {
+ 	// Debugging
+ 	DebugFuse  bool
+ 	DebugS3    bool
++        Cpuprofile string   
+ 	Foreground bool
+ }
+ 
+@@ -329,6 +336,7 @@ func PopulateFlags(c *cli.Context) (flags *FlagStorage) {
+ 		// Debugging,
+ 		DebugFuse:  c.Bool("debug_fuse"),
+ 		DebugS3:    c.Bool("debug_s3"),
++                Cpuprofile: c.String("cpuprofile"),
+ 		Foreground: c.Bool("f"),
+ 	}
+ 
+diff --git a/fs/goofys-0.0.13/internal/goofys.go b/fs/goofys-0.0.13/internal/goofys.go
+index e9841fa..bf19635 100644
+--- a/fs/goofys-0.0.13/internal/goofys.go
++++ b/fs/goofys-0.0.13/internal/goofys.go
+@@ -133,8 +133,8 @@ func NewGoofys(bucket string, awsConfig *aws.Config, flags *FlagStorage) *Goofys
+ 
+ 	var isAws bool
+ 	var err error
+-	if !fs.flags.RegionSet {
+-		err, isAws = fs.detectBucketLocationByHEAD()
++	/*if !fs.flags.RegionSet {
++        err, isAws = fs.detectBucketLocationByHEAD()
+ 		if err == nil {
+ 			// we detected a region header, this is probably AWS S3,
+ 			// or we can use anonymous access, or both
+@@ -154,8 +154,9 @@ func NewGoofys(bucket string, awsConfig *aws.Config, flags *FlagStorage) *Goofys
+ 				log.Errorf("Unable to access '%v': %v", fs.bucket, err)
+ 			}
+ 		}
+-	}
+-
++	}*/
++        fs.fallbackV2Signer()
++    
+ 	// try again with the credential to make sure
+ 	err = mapAwsError(fs.testBucket())
+ 	if err != nil {
+diff --git a/fs/goofys-0.0.13/internal/v2signer.go b/fs/goofys-0.0.13/internal/v2signer.go
+index 7137eb4..2c7aff8 100644
+--- a/fs/goofys-0.0.13/internal/v2signer.go
++++ b/fs/goofys-0.0.13/internal/v2signer.go
+@@ -38,7 +38,7 @@ var (
+ const (
+ 	signatureVersion = "2"
+ 	signatureMethod  = "HmacSHA1"
+-	timeFormat       = "Mon, 2 Jan 2006 15:04:05 +0000"
++	timeFormat       = "Mon, 02 Jan 2006 15:04:05 +0000"
+ )
+ 
+ var subresources = []string{
+diff --git a/fs/goofys-0.0.13/main.go b/fs/goofys-0.0.13/main.go
+index 47a0a2b..f340965 100644
+--- a/fs/goofys-0.0.13/main.go
++++ b/fs/goofys-0.0.13/main.go
+@@ -40,6 +40,11 @@ import (
+ 	"github.com/sirupsen/logrus"
+ 
+ 	daemon "github.com/sevlyar/go-daemon"
++
++        //"net/http"
++        "runtime/pprof"
++        //"strconv"
++        //"runtime"
+ )
+ 
+ var log = GetLogger("main")
+@@ -170,11 +175,20 @@ func massageArg0() {
+ 	}
+ }
+ 
+-var Version string
++func debug() {
++    /*panic("coredump test")*/
++    
++    /*go func() {
++        http.HandleFunc("/go", func(w http.ResponseWriter, r *http.Request) {
++            num := strconv.FormatInt(int64(runtime.NumGoroutine()), 10)
++            w.Write([]byte(num))
++        })
++        http.ListenAndServe("192.168.137.128:6060", nil)
++    }()*/
++}
+ 
+ func main() {
+-	VersionHash = Version
+-
++        debug()
+ 	app := NewApp()
+ 
+ 	var flags *FlagStorage
+@@ -196,6 +210,16 @@ func main() {
+ 		mountPoint := c.Args()[1]
+ 		flags = PopulateFlags(c)
+ 
++        if len(flags.Cpuprofile) > 0 {
++                f, err := os.Create(flags.Cpuprofile)
++                if err != nil {
++                        log.Fatal(err)
++                }
++                pprof.StartCPUProfile(f)
++                defer pprof.StopCPUProfile()
++                defer f.Close()
++        }
++
+ 		massagePath()
+ 
+ 		if !flags.Foreground {
+-- 
+1.8.3.1
+
+
+From 12111057173279f0f502a251439851b3d5bb4223 Mon Sep 17 00:00:00 2001
+From: chentao <chentao@dnion.com>
+Date: Thu, 6 Jul 2017 01:46:46 +0000
+Subject: [PATCH 2/6] description:add pagecache expire, if inode Attributes is
+ unchanged, KeepPageCache = true, otherwise KeepPageCache = false
+
+git-svn-id: http://192.168.88.85/svn/STORAGE_PRODUCT@831 6426301c-50a1-453f-bbdf-8bde4b0e49f6
+---
+ fs/goofys-0.0.13/internal/flags.go   |  4 +--
+ fs/goofys-0.0.13/internal/goofys.go  | 63 +++++++++++++++++++++++-------------
+ fs/goofys-0.0.13/internal/handles.go |  1 +
+ fs/goofys-0.0.13/main.go             | 18 +++++------
+ 4 files changed, 52 insertions(+), 34 deletions(-)
+
+diff --git a/fs/goofys-0.0.13/internal/flags.go b/fs/goofys-0.0.13/internal/flags.go
+index bc8f9a4..fd552b5 100644
+--- a/fs/goofys-0.0.13/internal/flags.go
++++ b/fs/goofys-0.0.13/internal/flags.go
+@@ -278,7 +278,7 @@ type FlagStorage struct {
+ 	// Debugging
+ 	DebugFuse  bool
+ 	DebugS3    bool
+-        Cpuprofile string   
++	Cpuprofile string   
+ 	Foreground bool
+ }
+ 
+@@ -336,7 +336,7 @@ func PopulateFlags(c *cli.Context) (flags *FlagStorage) {
+ 		// Debugging,
+ 		DebugFuse:  c.Bool("debug_fuse"),
+ 		DebugS3:    c.Bool("debug_s3"),
+-                Cpuprofile: c.String("cpuprofile"),
++		Cpuprofile: c.String("cpuprofile"),
+ 		Foreground: c.Bool("f"),
+ 	}
+ 
+diff --git a/fs/goofys-0.0.13/internal/goofys.go b/fs/goofys-0.0.13/internal/goofys.go
+index bf19635..3055610 100644
+--- a/fs/goofys-0.0.13/internal/goofys.go
++++ b/fs/goofys-0.0.13/internal/goofys.go
+@@ -134,29 +134,29 @@ func NewGoofys(bucket string, awsConfig *aws.Config, flags *FlagStorage) *Goofys
+ 	var isAws bool
+ 	var err error
+ 	/*if !fs.flags.RegionSet {
+-        err, isAws = fs.detectBucketLocationByHEAD()
+-		if err == nil {
+-			// we detected a region header, this is probably AWS S3,
+-			// or we can use anonymous access, or both
+-			fs.sess = session.New(awsConfig)
+-			fs.s3 = fs.newS3()
+-		} else if err == fuse.ENOENT {
+-			log.Errorf("bucket %v does not exist", fs.bucket)
+-			return nil
+-		} else {
+-			// this is NOT AWS, we expect the request to fail with 403 if this is not
+-			// an anonymous bucket, or if the provider doesn't support v4 signing, or both
+-			// swift3 and ceph-s3 return 400 so we know we can fallback to v2 signing
+-			// minio returns 403 because we are using anonymous credential
+-			if err == fuse.EINVAL {
+-				fs.fallbackV2Signer()
+-			} else if err != syscall.EACCES {
+-				log.Errorf("Unable to access '%v': %v", fs.bucket, err)
++	        err, isAws = fs.detectBucketLocationByHEAD()
++			if err == nil {
++				// we detected a region header, this is probably AWS S3,
++				// or we can use anonymous access, or both
++				fs.sess = session.New(awsConfig)
++				fs.s3 = fs.newS3()
++			} else if err == fuse.ENOENT {
++				log.Errorf("bucket %v does not exist", fs.bucket)
++				return nil
++			} else {
++				// this is NOT AWS, we expect the request to fail with 403 if this is not
++				// an anonymous bucket, or if the provider doesn't support v4 signing, or both
++				// swift3 and ceph-s3 return 400 so we know we can fallback to v2 signing
++				// minio returns 403 because we are using anonymous credential
++				if err == fuse.EINVAL {
++					fs.fallbackV2Signer()
++				} else if err != syscall.EACCES {
++					log.Errorf("Unable to access '%v': %v", fs.bucket, err)
++				}
+ 			}
+-		}
+-	}*/
+-        fs.fallbackV2Signer()
+-    
++		}*/
++	fs.fallbackV2Signer()
++
+ 	// try again with the credential to make sure
+ 	err = mapAwsError(fs.testBucket())
+ 	if err != nil {
+@@ -808,6 +808,7 @@ func (fs *Goofys) LookUpInode(
+ 	ctx context.Context,
+ 	op *fuseops.LookUpInodeOp) (err error) {
+ 
++	fuseLog.Debugln("0. look up inode", fs.flags.StatCacheTTL)
+ 	fs.mu.Lock()
+ 
+ 	parent := fs.getInodeOrDie(op.Parent)
+@@ -816,7 +817,12 @@ func (fs *Goofys) LookUpInode(
+ 		inode.Ref()
+ 		expireTime := inode.AttrTime.Add(fs.flags.StatCacheTTL)
+ 		if !expireTime.After(time.Now()) {
++			fuseLog.Debugln("1. expire changed inode", *inode.FullName)
+ 			ok = false
++			inode.Unchanged = false
++		} else {
++			fuseLog.Debugln("2. not expire unchanged inode", *inode.FullName)
++			inode.Unchanged = true
+ 		}
+ 	}
+ 	fs.mu.Unlock()
+@@ -843,11 +849,17 @@ func (fs *Goofys) LookUpInode(
+ 		if inode == nil {
+ 			fs.mu.Lock()
+ 			inode = newInode
++			inode.Unchanged = false
++			fuseLog.Debugln("3. new alloc inode", *inode.FullName)
+ 			inode.Id = fs.allocateInodeId()
+ 			fs.inodesCache[*inode.FullName] = inode
+ 			fs.inodes[inode.Id] = inode
+ 			fs.mu.Unlock()
+ 		} else {
++			if *inode.Attributes == *newInode.Attributes {
++				fuseLog.Debugln("4. Unchanged Mtime inode", *inode.FullName)
++				inode.Unchanged = true
++			}
+ 			inode.Attributes = newInode.Attributes
+ 			inode.AttrTime = time.Now()
+ 		}
+@@ -982,7 +994,12 @@ func (fs *Goofys) OpenFile(
+ 	fs.fileHandles[handleID] = fh
+ 
+ 	op.Handle = handleID
+-	op.KeepPageCache = true
++	if in.Unchanged {
++		op.KeepPageCache = true
++	} else {
++		op.KeepPageCache = false
++	}
++	in.Unchanged = true
+ 
+ 	return
+ }
+diff --git a/fs/goofys-0.0.13/internal/handles.go b/fs/goofys-0.0.13/internal/handles.go
+index 38462fd..29a8b7d 100644
+--- a/fs/goofys-0.0.13/internal/handles.go
++++ b/fs/goofys-0.0.13/internal/handles.go
+@@ -41,6 +41,7 @@ type Inode struct {
+ 	Attributes *fuseops.InodeAttributes
+ 	KnownSize  *uint64
+ 	Invalid    bool
++	Unchanged  bool
+ 	AttrTime   time.Time
+ 
+ 	Metadata map[string]*string
+diff --git a/fs/goofys-0.0.13/main.go b/fs/goofys-0.0.13/main.go
+index f340965..32ae485 100644
+--- a/fs/goofys-0.0.13/main.go
++++ b/fs/goofys-0.0.13/main.go
+@@ -210,15 +210,15 @@ func main() {
+ 		mountPoint := c.Args()[1]
+ 		flags = PopulateFlags(c)
+ 
+-        if len(flags.Cpuprofile) > 0 {
+-                f, err := os.Create(flags.Cpuprofile)
+-                if err != nil {
+-                        log.Fatal(err)
+-                }
+-                pprof.StartCPUProfile(f)
+-                defer pprof.StopCPUProfile()
+-                defer f.Close()
+-        }
++		if len(flags.Cpuprofile) > 0 {
++			f, err := os.Create(flags.Cpuprofile)
++			if err != nil {
++				log.Fatal(err)
++			}
++			pprof.StartCPUProfile(f)
++			defer pprof.StopCPUProfile()
++			defer f.Close()
++		}
+ 
+ 		massagePath()
+ 
+-- 
+1.8.3.1
+
+
+From b2d9f456951445c6e35e3c06ec3d05bce6dba811 Mon Sep 17 00:00:00 2001
+From: chentao <chentao@dnion.com>
+Date: Mon, 10 Jul 2017 10:46:08 +0000
+Subject: [PATCH 3/6] git-svn-id: http://192.168.88.85/svn/STORAGE_PRODUCT@838
+ 6426301c-50a1-453f-bbdf-8bde4b0e49f6
+
+---
+ fs/goofys-0.0.13/internal/goofys.go  | 19 +------------------
+ fs/goofys-0.0.13/internal/handles.go |  1 -
+ fs/goofys-0.0.13/main.go             |  4 +++-
+ 3 files changed, 4 insertions(+), 20 deletions(-)
+
+diff --git a/fs/goofys-0.0.13/internal/goofys.go b/fs/goofys-0.0.13/internal/goofys.go
+index 3055610..cc26559 100644
+--- a/fs/goofys-0.0.13/internal/goofys.go
++++ b/fs/goofys-0.0.13/internal/goofys.go
+@@ -808,7 +808,6 @@ func (fs *Goofys) LookUpInode(
+ 	ctx context.Context,
+ 	op *fuseops.LookUpInodeOp) (err error) {
+ 
+-	fuseLog.Debugln("0. look up inode", fs.flags.StatCacheTTL)
+ 	fs.mu.Lock()
+ 
+ 	parent := fs.getInodeOrDie(op.Parent)
+@@ -817,12 +816,7 @@ func (fs *Goofys) LookUpInode(
+ 		inode.Ref()
+ 		expireTime := inode.AttrTime.Add(fs.flags.StatCacheTTL)
+ 		if !expireTime.After(time.Now()) {
+-			fuseLog.Debugln("1. expire changed inode", *inode.FullName)
+ 			ok = false
+-			inode.Unchanged = false
+-		} else {
+-			fuseLog.Debugln("2. not expire unchanged inode", *inode.FullName)
+-			inode.Unchanged = true
+ 		}
+ 	}
+ 	fs.mu.Unlock()
+@@ -849,17 +843,11 @@ func (fs *Goofys) LookUpInode(
+ 		if inode == nil {
+ 			fs.mu.Lock()
+ 			inode = newInode
+-			inode.Unchanged = false
+-			fuseLog.Debugln("3. new alloc inode", *inode.FullName)
+ 			inode.Id = fs.allocateInodeId()
+ 			fs.inodesCache[*inode.FullName] = inode
+ 			fs.inodes[inode.Id] = inode
+ 			fs.mu.Unlock()
+ 		} else {
+-			if *inode.Attributes == *newInode.Attributes {
+-				fuseLog.Debugln("4. Unchanged Mtime inode", *inode.FullName)
+-				inode.Unchanged = true
+-			}
+ 			inode.Attributes = newInode.Attributes
+ 			inode.AttrTime = time.Now()
+ 		}
+@@ -994,12 +982,7 @@ func (fs *Goofys) OpenFile(
+ 	fs.fileHandles[handleID] = fh
+ 
+ 	op.Handle = handleID
+-	if in.Unchanged {
+-		op.KeepPageCache = true
+-	} else {
+-		op.KeepPageCache = false
+-	}
+-	in.Unchanged = true
++	op.KeepPageCache = true
+ 
+ 	return
+ }
+diff --git a/fs/goofys-0.0.13/internal/handles.go b/fs/goofys-0.0.13/internal/handles.go
+index 29a8b7d..38462fd 100644
+--- a/fs/goofys-0.0.13/internal/handles.go
++++ b/fs/goofys-0.0.13/internal/handles.go
+@@ -41,7 +41,6 @@ type Inode struct {
+ 	Attributes *fuseops.InodeAttributes
+ 	KnownSize  *uint64
+ 	Invalid    bool
+-	Unchanged  bool
+ 	AttrTime   time.Time
+ 
+ 	Metadata map[string]*string
+diff --git a/fs/goofys-0.0.13/main.go b/fs/goofys-0.0.13/main.go
+index 32ae485..6546253 100644
+--- a/fs/goofys-0.0.13/main.go
++++ b/fs/goofys-0.0.13/main.go
+@@ -175,6 +175,7 @@ func massageArg0() {
+ 	}
+ }
+ 
++var Version string
+ func debug() {
+     /*panic("coredump test")*/
+     
+@@ -188,7 +189,8 @@ func debug() {
+ }
+ 
+ func main() {
+-        debug()
++	VersionHash = Version
++
+ 	app := NewApp()
+ 
+ 	var flags *FlagStorage
+-- 
+1.8.3.1
+
+
+From 2f3e9320a045b8071052e2fd6bd12b39b1441dec Mon Sep 17 00:00:00 2001
+From: chentao <chentao@dnion.com>
+Date: Mon, 31 Jul 2017 13:18:52 +0000
+Subject: [PATCH 4/6] fix special charactor in uri sign bug
+
+git-svn-id: http://192.168.88.85/svn/STORAGE_PRODUCT@868 6426301c-50a1-453f-bbdf-8bde4b0e49f6
+---
+ fs/goofys-0.0.13/internal/v2signer.go | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/fs/goofys-0.0.13/internal/v2signer.go b/fs/goofys-0.0.13/internal/v2signer.go
+index 2c7aff8..53174c6 100644
+--- a/fs/goofys-0.0.13/internal/v2signer.go
++++ b/fs/goofys-0.0.13/internal/v2signer.go
+@@ -29,6 +29,7 @@ import (
+ 	"github.com/aws/aws-sdk-go/aws"
+ 	"github.com/aws/aws-sdk-go/aws/credentials"
+ 	"github.com/aws/aws-sdk-go/aws/request"
++	"github.com/aws/aws-sdk-go/private/protocol/rest"
+ )
+ 
+ var (
+@@ -130,7 +131,7 @@ func (v2 *signer) Sign() error {
+ 	} else {
+ 		uri = v2.Request.URL.Path
+ 	}
+-	path := pathEscape(uri)
++	path := rest.EscapePath(uri, false)
+ 	if !v2.pathStyle {
+ 		host := strings.SplitN(v2.Request.URL.Host, ".", 2)[0]
+ 		path = "/" + host + uri
+-- 
+1.8.3.1
+
+
+From 2ce076b83275089d1582b74df524a2919956777f Mon Sep 17 00:00:00 2001
+From: huoyuanguo <huoyuanguo@dnion.com>
+Date: Tue, 1 Aug 2017 05:22:43 +0000
+Subject: [PATCH 5/6] 1. remove HEAD filename/ request, because in our
+ stor-proxy objectname cannot end with /; 2. change multiupload part size to
+ 8M
+
+git-svn-id: http://192.168.88.85/svn/STORAGE_PRODUCT@869 6426301c-50a1-453f-bbdf-8bde4b0e49f6
+---
+ fs/goofys-0.0.13/internal/buffer_pool.go |  2 +-
+ fs/goofys-0.0.13/internal/goofys.go      | 22 +++-------------------
+ fs/goofys-0.0.13/internal/handles.go     |  8 +-------
+ 3 files changed, 5 insertions(+), 27 deletions(-)
+
+diff --git a/fs/goofys-0.0.13/internal/buffer_pool.go b/fs/goofys-0.0.13/internal/buffer_pool.go
+index 7444cd7..4eea78d 100644
+--- a/fs/goofys-0.0.13/internal/buffer_pool.go
++++ b/fs/goofys-0.0.13/internal/buffer_pool.go
+@@ -37,7 +37,7 @@ type BufferPool struct {
+ 	pool *sync.Pool
+ }
+ 
+-const BUF_SIZE = 5 * 1024 * 1024
++const BUF_SIZE = 8 * 1024 * 1024
+ 
+ func maxMemToUse(buffersNow uint64) uint64 {
+ 	m, err := mem.VirtualMemory()
+diff --git a/fs/goofys-0.0.13/internal/goofys.go b/fs/goofys-0.0.13/internal/goofys.go
+index cc26559..fda8b44 100644
+--- a/fs/goofys-0.0.13/internal/goofys.go
++++ b/fs/goofys-0.0.13/internal/goofys.go
+@@ -716,19 +716,16 @@ func (fs *Goofys) allocateInodeId() (id fuseops.InodeID) {
+ func (fs *Goofys) LookUpInodeMaybeDir(name string, fullName string) (inode *Inode, err error) {
+ 	errObjectChan := make(chan error, 1)
+ 	objectChan := make(chan s3.HeadObjectOutput, 1)
+-	errDirBlobChan := make(chan error, 1)
+-	dirBlobChan := make(chan s3.HeadObjectOutput, 1)
+ 	errDirChan := make(chan error, 1)
+ 	dirChan := make(chan s3.ListObjectsOutput, 1)
+ 
+ 	go fs.LookUpInodeNotDir(fullName, objectChan, errObjectChan)
+ 	if !fs.flags.Cheap {
+-		go fs.LookUpInodeNotDir(fullName+"/", dirBlobChan, errDirBlobChan)
+ 		go fs.LookUpInodeDir(fullName, dirChan, errDirChan)
+ 	}
+ 
+-	checking := 3
+-	var checkErr [3]error
++	checking := 2
++	var checkErr [2]error
+ 
+ 	for {
+ 		select {
+@@ -764,28 +761,15 @@ func (fs *Goofys) LookUpInodeMaybeDir(name string, fullName string) (inode *Inod
+ 				inode.KnownSize = &inode.Attributes.Size
+ 				return
+ 			} else {
+-				checkErr[2] = fuse.ENOENT
++				checkErr[1] = fuse.ENOENT
+ 				checking--
+ 			}
+ 		case err = <-errDirChan:
+ 			checking--
+-			checkErr[2] = err
+-		case _ = <-dirBlobChan:
+-			err = nil
+-			inode = NewInode(&name, &fullName, fs.flags)
+-			inode.Attributes = &fs.rootAttrs
+-			inode.KnownSize = &inode.Attributes.Size
+-			return
+-		case err = <-errDirBlobChan:
+-			checking--
+ 			checkErr[1] = err
+ 		}
+ 
+ 		switch checking {
+-		case 2:
+-			if fs.flags.Cheap {
+-				go fs.LookUpInodeNotDir(fullName+"/", dirBlobChan, errDirBlobChan)
+-			}
+ 		case 1:
+ 			if fs.flags.Cheap {
+ 				go fs.LookUpInodeDir(fullName, dirChan, errDirChan)
+diff --git a/fs/goofys-0.0.13/internal/handles.go b/fs/goofys-0.0.13/internal/handles.go
+index 38462fd..9ea62f4 100644
+--- a/fs/goofys-0.0.13/internal/handles.go
++++ b/fs/goofys-0.0.13/internal/handles.go
+@@ -493,13 +493,7 @@ func (fh *FileHandle) waitForCreateMPU(fs *Goofys) (err error) {
+ }
+ 
+ func (fh *FileHandle) partSize() uint64 {
+-	if fh.lastPartId < 1000 {
+-		return 5 * 1024 * 1024
+-	} else if fh.lastPartId < 2000 {
+-		return 25 * 1024 * 1024
+-	} else {
+-		return 125 * 1024 * 1024
+-	}
++	return 8 * 1024 * 1024
+ }
+ 
+ func (fh *FileHandle) WriteFile(fs *Goofys, offset int64, data []byte) (err error) {
+-- 
+1.8.3.1
+
+
+From 8d6c6070e5c8f932dac5a509e11180853fe6e073 Mon Sep 17 00:00:00 2001
+From: chentao <chentao@dnion.com>
+Date: Tue, 1 Aug 2017 06:33:54 +0000
+Subject: [PATCH 6/6] enable s3 signing log
+
+git-svn-id: http://192.168.88.85/svn/STORAGE_PRODUCT@870 6426301c-50a1-453f-bbdf-8bde4b0e49f6
+---
+ fs/goofys-0.0.13/internal/goofys.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/goofys-0.0.13/internal/goofys.go b/fs/goofys-0.0.13/internal/goofys.go
+index fda8b44..c79684f 100644
+--- a/fs/goofys-0.0.13/internal/goofys.go
++++ b/fs/goofys-0.0.13/internal/goofys.go
+@@ -123,7 +123,7 @@ func NewGoofys(bucket string, awsConfig *aws.Config, flags *FlagStorage) *Goofys
+ 	}
+ 
+ 	if flags.DebugS3 {
+-		awsConfig.LogLevel = aws.LogLevel(aws.LogDebug | aws.LogDebugWithRequestErrors)
++		awsConfig.LogLevel = aws.LogLevel(aws.LogDebug | aws.LogDebugWithRequestErrors | aws.LogDebugWithSigning)
+ 		s3Log.Level = logrus.DebugLevel
+ 	}
+ 
+-- 
+1.8.3.1
+

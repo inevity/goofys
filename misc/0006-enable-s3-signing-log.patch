@@ -1,0 +1,26 @@
+From 8d6c6070e5c8f932dac5a509e11180853fe6e073 Mon Sep 17 00:00:00 2001
+From: chentao <chentao@dnion.com>
+Date: Tue, 1 Aug 2017 06:33:54 +0000
+Subject: [PATCH 6/6] enable s3 signing log
+
+git-svn-id: http://192.168.88.85/svn/STORAGE_PRODUCT@870 6426301c-50a1-453f-bbdf-8bde4b0e49f6
+---
+ fs/goofys-0.0.13/internal/goofys.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/goofys-0.0.13/internal/goofys.go b/fs/goofys-0.0.13/internal/goofys.go
+index fda8b44..c79684f 100644
+--- a/fs/goofys-0.0.13/internal/goofys.go
++++ b/fs/goofys-0.0.13/internal/goofys.go
+@@ -123,7 +123,7 @@ func NewGoofys(bucket string, awsConfig *aws.Config, flags *FlagStorage) *Goofys
+ 	}
+ 
+ 	if flags.DebugS3 {
+-		awsConfig.LogLevel = aws.LogLevel(aws.LogDebug | aws.LogDebugWithRequestErrors)
++		awsConfig.LogLevel = aws.LogLevel(aws.LogDebug | aws.LogDebugWithRequestErrors | aws.LogDebugWithSigning)
+ 		s3Log.Level = logrus.DebugLevel
+ 	}
+ 
+-- 
+1.8.3.1
+

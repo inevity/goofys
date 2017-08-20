@@ -1,0 +1,34 @@
+From 2f3e9320a045b8071052e2fd6bd12b39b1441dec Mon Sep 17 00:00:00 2001
+From: chentao <chentao@dnion.com>
+Date: Mon, 31 Jul 2017 13:18:52 +0000
+Subject: [PATCH 4/6] fix special charactor in uri sign bug
+
+git-svn-id: http://192.168.88.85/svn/STORAGE_PRODUCT@868 6426301c-50a1-453f-bbdf-8bde4b0e49f6
+---
+ fs/goofys-0.0.13/internal/v2signer.go | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/fs/goofys-0.0.13/internal/v2signer.go b/fs/goofys-0.0.13/internal/v2signer.go
+index 2c7aff8..53174c6 100644
+--- a/fs/goofys-0.0.13/internal/v2signer.go
++++ b/fs/goofys-0.0.13/internal/v2signer.go
+@@ -29,6 +29,7 @@ import (
+ 	"github.com/aws/aws-sdk-go/aws"
+ 	"github.com/aws/aws-sdk-go/aws/credentials"
+ 	"github.com/aws/aws-sdk-go/aws/request"
++	"github.com/aws/aws-sdk-go/private/protocol/rest"
+ )
+ 
+ var (
+@@ -130,7 +131,7 @@ func (v2 *signer) Sign() error {
+ 	} else {
+ 		uri = v2.Request.URL.Path
+ 	}
+-	path := pathEscape(uri)
++	path := rest.EscapePath(uri, false)
+ 	if !v2.pathStyle {
+ 		host := strings.SplitN(v2.Request.URL.Host, ".", 2)[0]
+ 		path = "/" + host + uri
+-- 
+1.8.3.1
+

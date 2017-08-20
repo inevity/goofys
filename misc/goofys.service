@@ -1,0 +1,18 @@
+[Unit]
+Description=The nginx HTTP and reverse proxy server
+After=syslog.target network.target remote-fs.target nss-lookup.target
+
+[Service]
+Type=forking
+#Environment="LD_LIBRARY_PATH=/usr/local/openresty/nginx/proxy/thirdparty/thrift/lib"
+#PIDFile=/usr/local/openresty/nginx/logs/nginx.pid
+#ExecStartPre=/usr/local/openresty/nginx/sbin/nginx -t
+ExecStart=/root/go/dstorfs/bin/goofys --endpoint http://127.0.0.1:6081  -f --debug_fuse --debug_s3  root /home/ceph_goofys
+#ExecReload=/bin/kill -s HUP $MAINPID
+ExecStop=/bin/kill -s INT $MAINPID
+PrivateTmp=true
+Restart=on-failure
+#Restart=always
+
+[Install]
+WantedBy=multi-user.target
