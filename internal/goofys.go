@@ -129,51 +129,52 @@ func NewGoofys(bucket string, awsConfig *aws.Config, flags *FlagStorage) *Goofys
 
 	fs.awsConfig = awsConfig
 	fs.sess = session.New(awsConfig)
-	fs.s3 = fs.newS3()
+//	fs.s3 = fs.newS3()
 
-	var isAws bool
-	var err error
-	if !fs.flags.RegionSet {
-		err, isAws = fs.detectBucketLocationByHEAD()
-		if err == nil {
-			// we detected a region header, this is probably AWS S3,
-			// or we can use anonymous access, or both
-			fs.sess = session.New(awsConfig)
-			fs.s3 = fs.newS3()
-		} else if err == fuse.ENOENT {
-			log.Errorf("bucket %v does not exist", fs.bucket)
-			return nil
-		} else {
-			// this is NOT AWS, we expect the request to fail with 403 if this is not
-			// an anonymous bucket, or if the provider doesn't support v4 signing, or both
-			// swift3 and ceph-s3 return 400 so we know we can fallback to v2 signing
-			// minio returns 403 because we are using anonymous credential
-			if err == fuse.EINVAL {
-				fs.fallbackV2Signer()
-			} else if err != syscall.EACCES {
-				log.Errorf("Unable to access '%v': %v", fs.bucket, err)
-			}
-		}
-	}
+//	var isAws bool
+//	var err error
+//	if !fs.flags.RegionSet {
+//		err, isAws = fs.detectBucketLocationByHEAD()
+//		if err == nil {
+//			// we detected a region header, this is probably AWS S3,
+//			// or we can use anonymous access, or both
+//			fs.sess = session.New(awsConfig)
+//			fs.s3 = fs.newS3()
+//		} else if err == fuse.ENOENT {
+//			log.Errorf("bucket %v does not exist", fs.bucket)
+//			return nil
+//		} else {
+//			// this is NOT AWS, we expect the request to fail with 403 if this is not
+//			// an anonymous bucket, or if the provider doesn't support v4 signing, or both
+//			// swift3 and ceph-s3 return 400 so we know we can fallback to v2 signing
+//			// minio returns 403 because we are using anonymous credential
+//			if err == fuse.EINVAL {
+//				fs.fallbackV2Signer()
+//			} else if err != syscall.EACCES {
+//				log.Errorf("Unable to access '%v': %v", fs.bucket, err)
+//			}
+//		}
+//	}
+	fs.fallbackV2Signer()
 
 	// try again with the credential to make sure
-	err = mapAwsError(fs.testBucket())
-	if err != nil {
-		if !isAws {
-			// EMC returns 403 because it doesn't support v4 signing
-			// Amplidata just gives up and return 500
-			if err == syscall.EACCES || err == syscall.EAGAIN {
-				fs.fallbackV2Signer()
-				err = mapAwsError(fs.testBucket())
-			}
-		}
-
-		if err != nil {
-			log.Errorf("Unable to access '%v': %v", fs.bucket, err)
-			return nil
-		}
-	}
-
+//	err = mapAwsError(fs.testBucket())
+//	if err != nil {
+//		if !isAws {
+//			// EMC returns 403 because it doesn't support v4 signing
+//			// Amplidata just gives up and return 500
+//			if err == syscall.EACCES || err == syscall.EAGAIN {
+//				fs.fallbackV2Signer()
+//				err = mapAwsError(fs.testBucket())
+//			}
+//		}
+//
+//		if err != nil {
+//			log.Errorf("Unable to access '%v': %v", fs.bucket, err)
+//			return nil
+//		}
+//	}
+//
 	go fs.cleanUpOldMPU()
 
 	if flags.UseKMS {
@@ -401,9 +402,9 @@ func (fs *Goofys) cleanUpOldMPU() {
 // Find the given inode. Panic if it doesn't exist.
 //
 // LOCKS_REQUIRED(fs.mu)
-func (fs *Goofys) getInodeOrDie(id fuseops.InodeID) (inode *Inode) {
+func (fs *Goofys) getInodeOrDie(id fuseops.InodeID, b bool) (inode *Inode) {
 	inode = fs.inodes[id]
-	if inode == nil {
+	if inode == nil && b {
 		panic(fmt.Sprintf("Unknown inode: %v", id))
 	}
 
@@ -433,7 +434,7 @@ func (fs *Goofys) GetInodeAttributes(
 	op *fuseops.GetInodeAttributesOp) (err error) {
 
 	fs.mu.Lock()
-	inode := fs.getInodeOrDie(op.Inode)
+	inode := fs.getInodeOrDie(op.Inode, true)
 	fs.mu.Unlock()
 
 	attr, err := inode.GetAttributes(fs)
@@ -809,7 +810,7 @@ func (fs *Goofys) LookUpInode(
 
 	fs.mu.Lock()
 
-	parent := fs.getInodeOrDie(op.Parent)
+	parent := fs.getInodeOrDie(op.Parent, true)
 	inode, ok := fs.inodesCache[parent.getChildName(op.Name)]
 	if ok {
 		inode.Ref()
@@ -870,12 +871,14 @@ func (fs *Goofys) ForgetInode(
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
-	inode := fs.getInodeOrDie(op.Inode)
-	stale := inode.DeRef(op.N)
-
-	if stale {
-		delete(fs.inodes, op.Inode)
-		delete(fs.inodesCache, *inode.FullName)
+	inode := fs.getInodeOrDie(op.Inode, false)
+	stale := true
+	if inode != nil{
+		stale = inode.DeRef(op.N)
+		if stale {
+			  	delete(fs.inodes, op.Inode)
+			       	delete(fs.inodesCache, *inode.FullName)
+		}
 	}
 
 	return
@@ -889,7 +892,7 @@ func (fs *Goofys) OpenDir(
 	handleID := fs.nextHandleID
 	fs.nextHandleID++
 
-	in := fs.getInodeOrDie(op.Inode)
+	in := fs.getInodeOrDie(op.Inode, true)
 	fs.mu.Unlock()
 
 	// XXX/is this a dir?
@@ -967,7 +970,7 @@ func (fs *Goofys) OpenFile(
 	ctx context.Context,
 	op *fuseops.OpenFileOp) (err error) {
 	fs.mu.Lock()
-	in := fs.getInodeOrDie(op.Inode)
+	in := fs.getInodeOrDie(op.Inode, true)
 	fs.mu.Unlock()
 
 	fh := in.OpenFile(fs)
@@ -1056,7 +1059,7 @@ func (fs *Goofys) CreateFile(
 	op *fuseops.CreateFileOp) (err error) {
 
 	fs.mu.Lock()
-	parent := fs.getInodeOrDie(op.Parent)
+	parent := fs.getInodeOrDie(op.Parent, true)
 	fs.mu.Unlock()
 
 	inode, fh := parent.Create(fs, op.Name)
@@ -1094,7 +1097,7 @@ func (fs *Goofys) MkDir(
 	op *fuseops.MkDirOp) (err error) {
 
 	fs.mu.Lock()
-	parent := fs.getInodeOrDie(op.Parent)
+	parent := fs.getInodeOrDie(op.Parent, true)
 	fs.mu.Unlock()
 
 	// ignore op.Mode for now
@@ -1126,10 +1129,19 @@ func (fs *Goofys) RmDir(
 	op *fuseops.RmDirOp) (err error) {
 
 	fs.mu.Lock()
-	parent := fs.getInodeOrDie(op.Parent)
+	parent := fs.getInodeOrDie(op.Parent, true)
 	fs.mu.Unlock()
 
 	err = parent.RmDir(fs, op.Name)
+	if err == nil {
+		inode, _ := fs.inodesCache[parent.getChildName(op.Name)]
+		if inode != nil {
+			fs.mu.Lock()
+			delete(fs.inodes, inode.Id)
+			delete(fs.inodesCache, *inode.FullName)
+			fs.mu.Unlock()
+		}
+         }
 	parent.logFuse("<-- RmDir", op.Name, err)
 	return
 }
@@ -1139,7 +1151,7 @@ func (fs *Goofys) SetInodeAttributes(
 	op *fuseops.SetInodeAttributesOp) (err error) {
 
 	fs.mu.Lock()
-	inode := fs.getInodeOrDie(op.Inode)
+	inode := fs.getInodeOrDie(op.Inode, true)
 	fs.mu.Unlock()
 
 	attr, err := inode.GetAttributes(fs)
@@ -1172,7 +1184,7 @@ func (fs *Goofys) Unlink(
 	op *fuseops.UnlinkOp) (err error) {
 
 	fs.mu.Lock()
-	parent := fs.getInodeOrDie(op.Parent)
+	parent := fs.getInodeOrDie(op.Parent, true)
 	fs.mu.Unlock()
 
 	err = parent.Unlink(fs, op.Name)
@@ -1190,8 +1202,8 @@ func (fs *Goofys) Rename(
 	op *fuseops.RenameOp) (err error) {
 
 	fs.mu.Lock()
-	parent := fs.getInodeOrDie(op.OldParent)
-	newParent := fs.getInodeOrDie(op.NewParent)
+	parent := fs.getInodeOrDie(op.OldParent, true)
+	newParent := fs.getInodeOrDie(op.NewParent, true)
 	fs.mu.Unlock()
 
 	err = parent.Rename(fs, op.OldName, newParent, op.NewName)
