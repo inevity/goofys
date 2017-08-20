@@ -1,0 +1,349 @@
+From b9e2407b38eae662d9629883b03342b1fdf34ae1 Mon Sep 17 00:00:00 2001
+From: baul <roidinev@gmail.com>
+Date: Sun, 30 Jul 2017 14:27:01 +0800
+Subject: [PATCH 1/5] gops and torch debug patch
+
+---
+ main.go | 42 ++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 42 insertions(+)
+
+diff --git a/main.go b/main.go
+index 6546253..2f6620b 100644
+--- a/main.go
++++ b/main.go
+@@ -45,8 +45,16 @@ import (
+         "runtime/pprof"
+         //"strconv"
+         //"runtime"
++      // "log"
++      // "time"
++      "net/http"
++ 
++    //   "github.com/e-dard/netbug"
++
++       "github.com/google/gops/agent"
+ )
+ 
++import  _ "net/http/pprof"
+ var log = GetLogger("main")
+ 
+ func registerSIGINTHandler(mountPoint string) {
+@@ -189,6 +197,40 @@ func debug() {
+ }
+ 
+ func main() {
++     //   if err := agent.Listen(nil); err != nil {
++     // maybe define this options
++    // type Options struct {
++        // Addr is the host:port the agent will be listening at.
++        // Optional.
++   //     Addr string
++
++        // NoShutdownCleanup tells the agent not to automatically cleanup
++        // resources if the running process receives an interrupt.
++        // Optional.
++   //     NoShutdownCleanup bool
++   //    }
++//        var opts *agent.Options
++//       // var opts Options
++//       
++//        opts.Addr = ":48333"
++//1,type not redefine
++//2,declare var pointer,we need the origin var need inintail 
++        opts := &agent.Options{}
++        opts.Addr = ":48333"
++       
++        if err := agent.Listen(opts); err != nil {
++        //log.Fatal(err)
++        log.Fatalf("v%",err)
++        }
++//        r := http.NewServeMux()
++//      //  netbug.RegisterHandler("/myroute/", r)
++//        if err := http.ListenAndServe(":48334", r); err != nil {
++//            log.Fatalf("v%",err)
++//           // log.Fatal(err)
++//        }
++        go func() {
++	log.Println(http.ListenAndServe(":48334", nil))
++         }()
+ 	VersionHash = Version
+ 
+ 	app := NewApp()
+-- 
+1.8.3.1
+
+
+From a8d23d605d4d74541928ad69ed6362ab8da8d5fb Mon Sep 17 00:00:00 2001
+From: baul <roidinev@gmail.com>
+Date: Sun, 6 Aug 2017 06:38:51 +0800
+Subject: [PATCH 2/5] loglevel config and some comment
+
+---
+ main.go | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/main.go b/main.go
+index 2f6620b..809418d 100644
+--- a/main.go
++++ b/main.go
+@@ -31,6 +31,8 @@ import (
+ 	"github.com/aws/aws-sdk-go/aws/credentials"
+ 
+ 	"github.com/codegangsta/cli"
++        //go get github.com/urfave/cli
++        //"gopkg.in/urfave/cli.v1" 
+ 
+ 	"github.com/jacobsa/fuse"
+ 	"github.com/jacobsa/fuse/fuseutil"
+@@ -119,6 +121,10 @@ func mount(
+ 		Region: &flags.Region,
+ 		Logger: GetLogger("s3"),
+ 		//LogLevel: aws.LogLevel(aws.LogDebug),
++               //  Logger:   aws.LoggerFunc(func(args ...interface{}) { log.Println(args) }),
++                LogLevel: aws.LogLevel(aws.LogDebugWithSigning),
++              //LogLevel:         aws.LogLevel(aws.LogDebug | aws.LogDebugWithRequestErrors | aws.LogDebugWithSigning),
++
+ 	}
+ 
+ 	if len(flags.Profile) > 0 {
+-- 
+1.8.3.1
+
+
+From d1215b834f5b0926941481314946b0e94675482e Mon Sep 17 00:00:00 2001
+From: baul <roidinev@gmail.com>
+Date: Sun, 6 Aug 2017 06:42:30 +0800
+Subject: [PATCH 3/5] comment HEAD and change cleanUpOldMPU to sync run to
+ valid root accesskey when root mount; if cleanUpOldMPU fail,not to mount
+
+---
+ internal/goofys.go | 52 +++++++++++++++++++++++++++++-----------------------
+ 1 file changed, 29 insertions(+), 23 deletions(-)
+
+diff --git a/internal/goofys.go b/internal/goofys.go
+index 21365de..033fa13 100644
+--- a/internal/goofys.go
++++ b/internal/goofys.go
+@@ -132,7 +132,7 @@ func NewGoofys(bucket string, awsConfig *aws.Config, flags *FlagStorage) *Goofys
+ 	fs.sess = session.New(awsConfig)
+ 	fs.s3 = fs.newS3()
+ 
+-	var isAws bool
++//	var isAws bool
+ 	var err error
+ 	/*if !fs.flags.RegionSet {
+ 	        err, isAws = fs.detectBucketLocationByHEAD()
+@@ -159,24 +159,29 @@ func NewGoofys(bucket string, awsConfig *aws.Config, flags *FlagStorage) *Goofys
+ 	fs.fallbackV2Signer()
+ 
+ 	// try again with the credential to make sure
+-	err = mapAwsError(fs.testBucket())
+-	if err != nil {
+-		if !isAws {
+-			// EMC returns 403 because it doesn't support v4 signing
+-			// Amplidata just gives up and return 500
+-			if err == syscall.EACCES || err == syscall.EAGAIN {
+-				fs.fallbackV2Signer()
+-				err = mapAwsError(fs.testBucket())
+-			}
+-		}
+-
+-		if err != nil {
+-			log.Errorf("Unable to access '%v': %v", fs.bucket, err)
+-			return nil
+-		}
+-	}
+-
+-	go fs.cleanUpOldMPU()
++      
++//	err = mapAwsError(fs.testBucket())
++//	if err != nil {
++//		if !isAws {
++//			// EMC returns 403 because it doesn't support v4 signing
++//			// Amplidata just gives up and return 500
++//			if err == syscall.EACCES || err == syscall.EAGAIN {
++//				fs.fallbackV2Signer()
++//				err = mapAwsError(fs.testBucket())
++//			}
++//		}
++//
++//		if err != nil {
++//			log.Errorf("Unable to access '%v': %v", fs.bucket, err)
++//			return nil
++//		}
++//	}
++        //need return err to valid root accesskey ,and clean mpu 
++	//go fs.cleanUpOldMPU()
++	err = mapAwsError(fs.cleanUpOldMPU())
++        if err != nil {
++                return nil
++        }
+ 
+ 	if flags.UseKMS {
+ 		//SSE header string for KMS server-side encryption (SSE-KMS)
+@@ -375,11 +380,11 @@ func (fs *Goofys) detectBucketLocationByHEAD() (err error, isAws bool) {
+ 	return
+ }
+ 
+-func (fs *Goofys) cleanUpOldMPU() {
++func (fs *Goofys) cleanUpOldMPU() error {
+ 	mpu, err := fs.s3.ListMultipartUploads(&s3.ListMultipartUploadsInput{Bucket: &fs.bucket})
+ 	if err != nil {
+-		mapAwsError(err)
+-		return
++		//mapAwsError(err)
++		return err
+ 	}
+ 	s3Log.Debug(mpu)
+ 
+@@ -397,12 +402,13 @@ func (fs *Goofys) cleanUpOldMPU() {
+ 			s3Log.Debug(resp)
+ 
+ 			if mapAwsError(err) == syscall.EACCES {
+-				break
++				return nil
+ 			}
+ 		} else {
+ 			s3Log.Debugf("Keeping MPU Key=%v Id=%v", *upload.Key, *upload.UploadId)
+ 		}
+ 	}
++        return nil
+ }
+ 
+ // Find the given inode. Panic if it doesn't exist.
+-- 
+1.8.3.1
+
+
+From 870a5f7fc08e99177ee50130939b611681dd7cdd Mon Sep 17 00:00:00 2001
+From: baul <roidinev@gmail.com>
+Date: Sun, 6 Aug 2017 07:10:18 +0800
+Subject: [PATCH 4/5] remove loglevel hardcoded
+
+---
+ main.go | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/main.go b/main.go
+index 809418d..f818c5d 100644
+--- a/main.go
++++ b/main.go
+@@ -122,8 +122,8 @@ func mount(
+ 		Logger: GetLogger("s3"),
+ 		//LogLevel: aws.LogLevel(aws.LogDebug),
+                //  Logger:   aws.LoggerFunc(func(args ...interface{}) { log.Println(args) }),
+-                LogLevel: aws.LogLevel(aws.LogDebugWithSigning),
+-              //LogLevel:         aws.LogLevel(aws.LogDebug | aws.LogDebugWithRequestErrors | aws.LogDebugWithSigning),
++               //LogLevel: aws.LogLevel(aws.LogDebugWithSigning),
++               //LogLevel:         aws.LogLevel(aws.LogDebug | aws.LogDebugWithRequestErrors | aws.LogDebugWithSigning),
+ 
+ 	}
+ 
+-- 
+1.8.3.1
+
+
+From 5ba719148099df9d0382ac613105deeed39d5a45 Mon Sep 17 00:00:00 2001
+From: baul <roidinev@gmail.com>
+Date: Sun, 6 Aug 2017 10:26:03 +0800
+Subject: [PATCH 5/5] clean comments
+
+---
+ internal/goofys.go | 17 -----------------
+ main.go            | 30 +-----------------------------
+ 2 files changed, 1 insertion(+), 46 deletions(-)
+
+diff --git a/internal/goofys.go b/internal/goofys.go
+index 033fa13..b17b1b2 100644
+--- a/internal/goofys.go
++++ b/internal/goofys.go
+@@ -160,22 +160,6 @@ func NewGoofys(bucket string, awsConfig *aws.Config, flags *FlagStorage) *Goofys
+ 
+ 	// try again with the credential to make sure
+       
+-//	err = mapAwsError(fs.testBucket())
+-//	if err != nil {
+-//		if !isAws {
+-//			// EMC returns 403 because it doesn't support v4 signing
+-//			// Amplidata just gives up and return 500
+-//			if err == syscall.EACCES || err == syscall.EAGAIN {
+-//				fs.fallbackV2Signer()
+-//				err = mapAwsError(fs.testBucket())
+-//			}
+-//		}
+-//
+-//		if err != nil {
+-//			log.Errorf("Unable to access '%v': %v", fs.bucket, err)
+-//			return nil
+-//		}
+-//	}
+         //need return err to valid root accesskey ,and clean mpu 
+ 	//go fs.cleanUpOldMPU()
+ 	err = mapAwsError(fs.cleanUpOldMPU())
+@@ -383,7 +367,6 @@ func (fs *Goofys) detectBucketLocationByHEAD() (err error, isAws bool) {
+ func (fs *Goofys) cleanUpOldMPU() error {
+ 	mpu, err := fs.s3.ListMultipartUploads(&s3.ListMultipartUploadsInput{Bucket: &fs.bucket})
+ 	if err != nil {
+-		//mapAwsError(err)
+ 		return err
+ 	}
+ 	s3Log.Debug(mpu)
+diff --git a/main.go b/main.go
+index f818c5d..a394eed 100644
+--- a/main.go
++++ b/main.go
+@@ -120,10 +120,6 @@ func mount(
+ 	awsConfig := &aws.Config{
+ 		Region: &flags.Region,
+ 		Logger: GetLogger("s3"),
+-		//LogLevel: aws.LogLevel(aws.LogDebug),
+-               //  Logger:   aws.LoggerFunc(func(args ...interface{}) { log.Println(args) }),
+-               //LogLevel: aws.LogLevel(aws.LogDebugWithSigning),
+-               //LogLevel:         aws.LogLevel(aws.LogDebug | aws.LogDebugWithRequestErrors | aws.LogDebugWithSigning),
+ 
+ 	}
+ 
+@@ -203,24 +199,6 @@ func debug() {
+ }
+ 
+ func main() {
+-     //   if err := agent.Listen(nil); err != nil {
+-     // maybe define this options
+-    // type Options struct {
+-        // Addr is the host:port the agent will be listening at.
+-        // Optional.
+-   //     Addr string
+-
+-        // NoShutdownCleanup tells the agent not to automatically cleanup
+-        // resources if the running process receives an interrupt.
+-        // Optional.
+-   //     NoShutdownCleanup bool
+-   //    }
+-//        var opts *agent.Options
+-//       // var opts Options
+-//       
+-//        opts.Addr = ":48333"
+-//1,type not redefine
+-//2,declare var pointer,we need the origin var need inintail 
+         opts := &agent.Options{}
+         opts.Addr = ":48333"
+        
+@@ -228,14 +206,8 @@ func main() {
+         //log.Fatal(err)
+         log.Fatalf("v%",err)
+         }
+-//        r := http.NewServeMux()
+-//      //  netbug.RegisterHandler("/myroute/", r)
+-//        if err := http.ListenAndServe(":48334", r); err != nil {
+-//            log.Fatalf("v%",err)
+-//           // log.Fatal(err)
+-//        }
+         go func() {
+-	log.Println(http.ListenAndServe(":48334", nil))
++	       http.ListenAndServe(":48334", nil)
+          }()
+ 	VersionHash = Version
+ 
+-- 
+1.8.3.1
+

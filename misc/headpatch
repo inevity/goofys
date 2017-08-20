@@ -1,0 +1,71 @@
+commit 4f47e6efd0c1130d24c7d0103cc1e9ed8c0dda64
+Author: baul <roidinev@gmail.com>
+Date:   Fri May 5 15:36:57 2017 +0800
+
+    add debug instrument
+
+diff --git a/main.go b/main.go
+index 61551c9..72c4ee7 100644
+--- a/main.go
++++ b/main.go
+@@ -40,10 +40,19 @@ import (
+ 	"github.com/Sirupsen/logrus"
+ 
+ 	daemon "github.com/sevlyar/go-daemon"
++       // "log"
++       // "time"
++	"net/http"
++  
++     //   "github.com/e-dard/netbug"
++
++        "github.com/google/gops/agent"
+ )
+ 
++import  _ "net/http/pprof"
+ var log = GetLogger("main")
+ 
++
+ func registerSIGINTHandler(mountPoint string) {
+ 	// Register for SIGINT.
+ 	signalChan := make(chan os.Signal, 1)
+@@ -171,6 +180,40 @@ func massageArg0() {
+ }
+ 
+ func main() {
++     //   if err := agent.Listen(nil); err != nil {
++     // maybe define this options
++    // type Options struct {
++        // Addr is the host:port the agent will be listening at.
++        // Optional.
++   //     Addr string
++
++        // NoShutdownCleanup tells the agent not to automatically cleanup
++        // resources if the running process receives an interrupt.
++        // Optional.
++   //     NoShutdownCleanup bool
++   //    }
++//        var opts *agent.Options
++//       // var opts Options
++//       
++//        opts.Addr = ":48333"
++//1,type not redefine
++//2,declare var pointer,we need the origin var need inintail 
++        opts := &agent.Options{}
++        opts.Addr = ":48333"
++       
++        if err := agent.Listen(opts); err != nil {
++        //log.Fatal(err)
++        log.Fatalf("v%",err)
++        }
++//        r := http.NewServeMux()
++//      //  netbug.RegisterHandler("/myroute/", r)
++//        if err := http.ListenAndServe(":48334", r); err != nil {
++//            log.Fatalf("v%",err)
++//           // log.Fatal(err)
++//        }
++        go func() {
++	log.Println(http.ListenAndServe(":48334", nil))
++         }()
+ 	app := NewApp()
+ 	app.Action = func(c *cli.Context) (err error) {
+ 		// We should get two arguments exactly. Otherwise error out.

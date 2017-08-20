@@ -1,0 +1,146 @@
+From 4aa1d02d67420d83dcf3b0771e076ed5bdf5fa70 Mon Sep 17 00:00:00 2001
+From: chentao <chentao@dnion.com>
+Date: Mon, 3 Jul 2017 06:51:50 +0000
+Subject: [PATCH 1/6] description: update goofys to v0.0.13
+
+git-svn-id: http://192.168.88.85/svn/STORAGE_PRODUCT@816 6426301c-50a1-453f-bbdf-8bde4b0e49f6
+---
+ fs/goofys-0.0.13/internal/flags.go    |  8 ++++++++
+ fs/goofys-0.0.13/internal/goofys.go   |  9 +++++----
+ fs/goofys-0.0.13/internal/v2signer.go |  2 +-
+ fs/goofys-0.0.13/main.go              | 30 +++++++++++++++++++++++++++---
+ 4 files changed, 41 insertions(+), 8 deletions(-)
+
+diff --git a/fs/goofys-0.0.13/internal/flags.go b/fs/goofys-0.0.13/internal/flags.go
+index 469c111..bc8f9a4 100644
+--- a/fs/goofys-0.0.13/internal/flags.go
++++ b/fs/goofys-0.0.13/internal/flags.go
+@@ -213,6 +213,12 @@ func NewApp() (app *cli.App) {
+ 				Usage: "Enable S3-related debugging output.",
+ 			},
+ 
++			cli.StringFlag{
++				Name:  "cpuprofile",
++				Value: "",
++				Usage: "pprof debug file name",
++			},
++
+ 			cli.BoolFlag{
+ 				Name:  "f",
+ 				Usage: "Run goofys in foreground.",
+@@ -272,6 +278,7 @@ type FlagStorage struct {
+ 	// Debugging
+ 	DebugFuse  bool
+ 	DebugS3    bool
++        Cpuprofile string   
+ 	Foreground bool
+ }
+ 
+@@ -329,6 +336,7 @@ func PopulateFlags(c *cli.Context) (flags *FlagStorage) {
+ 		// Debugging,
+ 		DebugFuse:  c.Bool("debug_fuse"),
+ 		DebugS3:    c.Bool("debug_s3"),
++                Cpuprofile: c.String("cpuprofile"),
+ 		Foreground: c.Bool("f"),
+ 	}
+ 
+diff --git a/fs/goofys-0.0.13/internal/goofys.go b/fs/goofys-0.0.13/internal/goofys.go
+index e9841fa..bf19635 100644
+--- a/fs/goofys-0.0.13/internal/goofys.go
++++ b/fs/goofys-0.0.13/internal/goofys.go
+@@ -133,8 +133,8 @@ func NewGoofys(bucket string, awsConfig *aws.Config, flags *FlagStorage) *Goofys
+ 
+ 	var isAws bool
+ 	var err error
+-	if !fs.flags.RegionSet {
+-		err, isAws = fs.detectBucketLocationByHEAD()
++	/*if !fs.flags.RegionSet {
++        err, isAws = fs.detectBucketLocationByHEAD()
+ 		if err == nil {
+ 			// we detected a region header, this is probably AWS S3,
+ 			// or we can use anonymous access, or both
+@@ -154,8 +154,9 @@ func NewGoofys(bucket string, awsConfig *aws.Config, flags *FlagStorage) *Goofys
+ 				log.Errorf("Unable to access '%v': %v", fs.bucket, err)
+ 			}
+ 		}
+-	}
+-
++	}*/
++        fs.fallbackV2Signer()
++    
+ 	// try again with the credential to make sure
+ 	err = mapAwsError(fs.testBucket())
+ 	if err != nil {
+diff --git a/fs/goofys-0.0.13/internal/v2signer.go b/fs/goofys-0.0.13/internal/v2signer.go
+index 7137eb4..2c7aff8 100644
+--- a/fs/goofys-0.0.13/internal/v2signer.go
++++ b/fs/goofys-0.0.13/internal/v2signer.go
+@@ -38,7 +38,7 @@ var (
+ const (
+ 	signatureVersion = "2"
+ 	signatureMethod  = "HmacSHA1"
+-	timeFormat       = "Mon, 2 Jan 2006 15:04:05 +0000"
++	timeFormat       = "Mon, 02 Jan 2006 15:04:05 +0000"
+ )
+ 
+ var subresources = []string{
+diff --git a/fs/goofys-0.0.13/main.go b/fs/goofys-0.0.13/main.go
+index 47a0a2b..f340965 100644
+--- a/fs/goofys-0.0.13/main.go
++++ b/fs/goofys-0.0.13/main.go
+@@ -40,6 +40,11 @@ import (
+ 	"github.com/sirupsen/logrus"
+ 
+ 	daemon "github.com/sevlyar/go-daemon"
++
++        //"net/http"
++        "runtime/pprof"
++        //"strconv"
++        //"runtime"
+ )
+ 
+ var log = GetLogger("main")
+@@ -170,11 +175,20 @@ func massageArg0() {
+ 	}
+ }
+ 
+-var Version string
++func debug() {
++    /*panic("coredump test")*/
++    
++    /*go func() {
++        http.HandleFunc("/go", func(w http.ResponseWriter, r *http.Request) {
++            num := strconv.FormatInt(int64(runtime.NumGoroutine()), 10)
++            w.Write([]byte(num))
++        })
++        http.ListenAndServe("192.168.137.128:6060", nil)
++    }()*/
++}
+ 
+ func main() {
+-	VersionHash = Version
+-
++        debug()
+ 	app := NewApp()
+ 
+ 	var flags *FlagStorage
+@@ -196,6 +210,16 @@ func main() {
+ 		mountPoint := c.Args()[1]
+ 		flags = PopulateFlags(c)
+ 
++        if len(flags.Cpuprofile) > 0 {
++                f, err := os.Create(flags.Cpuprofile)
++                if err != nil {
++                        log.Fatal(err)
++                }
++                pprof.StartCPUProfile(f)
++                defer pprof.StopCPUProfile()
++                defer f.Close()
++        }
++
+ 		massagePath()
+ 
+ 		if !flags.Foreground {
+-- 
+1.8.3.1
+

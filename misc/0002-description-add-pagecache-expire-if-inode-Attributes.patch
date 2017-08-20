@@ -1,0 +1,189 @@
+From 12111057173279f0f502a251439851b3d5bb4223 Mon Sep 17 00:00:00 2001
+From: chentao <chentao@dnion.com>
+Date: Thu, 6 Jul 2017 01:46:46 +0000
+Subject: [PATCH 2/6] description:add pagecache expire, if inode Attributes is
+ unchanged, KeepPageCache = true, otherwise KeepPageCache = false
+
+git-svn-id: http://192.168.88.85/svn/STORAGE_PRODUCT@831 6426301c-50a1-453f-bbdf-8bde4b0e49f6
+---
+ fs/goofys-0.0.13/internal/flags.go   |  4 +--
+ fs/goofys-0.0.13/internal/goofys.go  | 63 +++++++++++++++++++++++-------------
+ fs/goofys-0.0.13/internal/handles.go |  1 +
+ fs/goofys-0.0.13/main.go             | 18 +++++------
+ 4 files changed, 52 insertions(+), 34 deletions(-)
+
+diff --git a/fs/goofys-0.0.13/internal/flags.go b/fs/goofys-0.0.13/internal/flags.go
+index bc8f9a4..fd552b5 100644
+--- a/fs/goofys-0.0.13/internal/flags.go
++++ b/fs/goofys-0.0.13/internal/flags.go
+@@ -278,7 +278,7 @@ type FlagStorage struct {
+ 	// Debugging
+ 	DebugFuse  bool
+ 	DebugS3    bool
+-        Cpuprofile string   
++	Cpuprofile string   
+ 	Foreground bool
+ }
+ 
+@@ -336,7 +336,7 @@ func PopulateFlags(c *cli.Context) (flags *FlagStorage) {
+ 		// Debugging,
+ 		DebugFuse:  c.Bool("debug_fuse"),
+ 		DebugS3:    c.Bool("debug_s3"),
+-                Cpuprofile: c.String("cpuprofile"),
++		Cpuprofile: c.String("cpuprofile"),
+ 		Foreground: c.Bool("f"),
+ 	}
+ 
+diff --git a/fs/goofys-0.0.13/internal/goofys.go b/fs/goofys-0.0.13/internal/goofys.go
+index bf19635..3055610 100644
+--- a/fs/goofys-0.0.13/internal/goofys.go
++++ b/fs/goofys-0.0.13/internal/goofys.go
+@@ -134,29 +134,29 @@ func NewGoofys(bucket string, awsConfig *aws.Config, flags *FlagStorage) *Goofys
+ 	var isAws bool
+ 	var err error
+ 	/*if !fs.flags.RegionSet {
+-        err, isAws = fs.detectBucketLocationByHEAD()
+-		if err == nil {
+-			// we detected a region header, this is probably AWS S3,
+-			// or we can use anonymous access, or both
+-			fs.sess = session.New(awsConfig)
+-			fs.s3 = fs.newS3()
+-		} else if err == fuse.ENOENT {
+-			log.Errorf("bucket %v does not exist", fs.bucket)
+-			return nil
+-		} else {
+-			// this is NOT AWS, we expect the request to fail with 403 if this is not
+-			// an anonymous bucket, or if the provider doesn't support v4 signing, or both
+-			// swift3 and ceph-s3 return 400 so we know we can fallback to v2 signing
+-			// minio returns 403 because we are using anonymous credential
+-			if err == fuse.EINVAL {
+-				fs.fallbackV2Signer()
+-			} else if err != syscall.EACCES {
+-				log.Errorf("Unable to access '%v': %v", fs.bucket, err)
++	        err, isAws = fs.detectBucketLocationByHEAD()
++			if err == nil {
++				// we detected a region header, this is probably AWS S3,
++				// or we can use anonymous access, or both
++				fs.sess = session.New(awsConfig)
++				fs.s3 = fs.newS3()
++			} else if err == fuse.ENOENT {
++				log.Errorf("bucket %v does not exist", fs.bucket)
++				return nil
++			} else {
++				// this is NOT AWS, we expect the request to fail with 403 if this is not
++				// an anonymous bucket, or if the provider doesn't support v4 signing, or both
++				// swift3 and ceph-s3 return 400 so we know we can fallback to v2 signing
++				// minio returns 403 because we are using anonymous credential
++				if err == fuse.EINVAL {
++					fs.fallbackV2Signer()
++				} else if err != syscall.EACCES {
++					log.Errorf("Unable to access '%v': %v", fs.bucket, err)
++				}
+ 			}
+-		}
+-	}*/
+-        fs.fallbackV2Signer()
+-    
++		}*/
++	fs.fallbackV2Signer()
++
+ 	// try again with the credential to make sure
+ 	err = mapAwsError(fs.testBucket())
+ 	if err != nil {
+@@ -808,6 +808,7 @@ func (fs *Goofys) LookUpInode(
+ 	ctx context.Context,
+ 	op *fuseops.LookUpInodeOp) (err error) {
+ 
++	fuseLog.Debugln("0. look up inode", fs.flags.StatCacheTTL)
+ 	fs.mu.Lock()
+ 
+ 	parent := fs.getInodeOrDie(op.Parent)
+@@ -816,7 +817,12 @@ func (fs *Goofys) LookUpInode(
+ 		inode.Ref()
+ 		expireTime := inode.AttrTime.Add(fs.flags.StatCacheTTL)
+ 		if !expireTime.After(time.Now()) {
++			fuseLog.Debugln("1. expire changed inode", *inode.FullName)
+ 			ok = false
++			inode.Unchanged = false
++		} else {
++			fuseLog.Debugln("2. not expire unchanged inode", *inode.FullName)
++			inode.Unchanged = true
+ 		}
+ 	}
+ 	fs.mu.Unlock()
+@@ -843,11 +849,17 @@ func (fs *Goofys) LookUpInode(
+ 		if inode == nil {
+ 			fs.mu.Lock()
+ 			inode = newInode
++			inode.Unchanged = false
++			fuseLog.Debugln("3. new alloc inode", *inode.FullName)
+ 			inode.Id = fs.allocateInodeId()
+ 			fs.inodesCache[*inode.FullName] = inode
+ 			fs.inodes[inode.Id] = inode
+ 			fs.mu.Unlock()
+ 		} else {
++			if *inode.Attributes == *newInode.Attributes {
++				fuseLog.Debugln("4. Unchanged Mtime inode", *inode.FullName)
++				inode.Unchanged = true
++			}
+ 			inode.Attributes = newInode.Attributes
+ 			inode.AttrTime = time.Now()
+ 		}
+@@ -982,7 +994,12 @@ func (fs *Goofys) OpenFile(
+ 	fs.fileHandles[handleID] = fh
+ 
+ 	op.Handle = handleID
+-	op.KeepPageCache = true
++	if in.Unchanged {
++		op.KeepPageCache = true
++	} else {
++		op.KeepPageCache = false
++	}
++	in.Unchanged = true
+ 
+ 	return
+ }
+diff --git a/fs/goofys-0.0.13/internal/handles.go b/fs/goofys-0.0.13/internal/handles.go
+index 38462fd..29a8b7d 100644
+--- a/fs/goofys-0.0.13/internal/handles.go
++++ b/fs/goofys-0.0.13/internal/handles.go
+@@ -41,6 +41,7 @@ type Inode struct {
+ 	Attributes *fuseops.InodeAttributes
+ 	KnownSize  *uint64
+ 	Invalid    bool
++	Unchanged  bool
+ 	AttrTime   time.Time
+ 
+ 	Metadata map[string]*string
+diff --git a/fs/goofys-0.0.13/main.go b/fs/goofys-0.0.13/main.go
+index f340965..32ae485 100644
+--- a/fs/goofys-0.0.13/main.go
++++ b/fs/goofys-0.0.13/main.go
+@@ -210,15 +210,15 @@ func main() {
+ 		mountPoint := c.Args()[1]
+ 		flags = PopulateFlags(c)
+ 
+-        if len(flags.Cpuprofile) > 0 {
+-                f, err := os.Create(flags.Cpuprofile)
+-                if err != nil {
+-                        log.Fatal(err)
+-                }
+-                pprof.StartCPUProfile(f)
+-                defer pprof.StopCPUProfile()
+-                defer f.Close()
+-        }
++		if len(flags.Cpuprofile) > 0 {
++			f, err := os.Create(flags.Cpuprofile)
++			if err != nil {
++				log.Fatal(err)
++			}
++			pprof.StartCPUProfile(f)
++			defer pprof.StopCPUProfile()
++			defer f.Close()
++		}
+ 
+ 		massagePath()
+ 
+-- 
+1.8.3.1
+

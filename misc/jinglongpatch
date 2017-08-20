@@ -1,0 +1,141 @@
+diff --git a/fs/goofys-0.0.13/internal/goofys.go b/fs/goofys-0.0.13/internal/goofys.go
+index c198670..110da55 100644
+--- a/fs/goofys-0.0.13/internal/goofys.go
++++ b/fs/goofys-0.0.13/internal/goofys.go
+@@ -391,9 +391,9 @@ func (fs *Goofys) cleanUpOldMPU() error {
+ // Find the given inode. Panic if it doesn't exist.
+ //
+ // LOCKS_REQUIRED(fs.mu)
+-func (fs *Goofys) getInodeOrDie(id fuseops.InodeID) (inode *Inode) {
++func (fs *Goofys) getInodeOrDie(id fuseops.InodeID, b bool) (inode *Inode) {
+ 	inode = fs.inodes[id]
+-	if inode == nil {
++	if inode == nil && b {
+ 		panic(fmt.Sprintf("Unknown inode: %v", id))
+ 	}
+ 
+@@ -423,7 +423,7 @@ func (fs *Goofys) GetInodeAttributes(
+ 	op *fuseops.GetInodeAttributesOp) (err error) {
+ 
+ 	fs.mu.Lock()
+-	inode := fs.getInodeOrDie(op.Inode)
++	inode := fs.getInodeOrDie(op.Inode, true)
+ 	fs.mu.Unlock()
+ 
+ 	attr, err := inode.GetAttributes(fs)
+@@ -767,7 +767,7 @@ func (fs *Goofys) LookUpInode(
+ 
+ 	fs.mu.Lock()
+ 
+-	parent := fs.getInodeOrDie(op.Parent)
++	parent := fs.getInodeOrDie(op.Parent, true)
+ 	inode, ok := fs.inodesCache[parent.getChildName(op.Name)]
+ 	if ok {
+ 		inode.Ref()
+@@ -828,12 +828,14 @@ func (fs *Goofys) ForgetInode(
+ 	fs.mu.Lock()
+ 	defer fs.mu.Unlock()
+ 
+-	inode := fs.getInodeOrDie(op.Inode)
+-	stale := inode.DeRef(op.N)
+-
+-	if stale {
+-		delete(fs.inodes, op.Inode)
+-		delete(fs.inodesCache, *inode.FullName)
++	inode := fs.getInodeOrDie(op.Inode, false)
++	stale := true
++	if inode != nil{
++		stale = inode.DeRef(op.N)
++		if stale {
++			  	delete(fs.inodes, op.Inode)
++			       	delete(fs.inodesCache, *inode.FullName)
++		}
+ 	}
+ 
+ 	return
+@@ -847,7 +849,7 @@ func (fs *Goofys) OpenDir(
+ 	handleID := fs.nextHandleID
+ 	fs.nextHandleID++
+ 
+-	in := fs.getInodeOrDie(op.Inode)
++	in := fs.getInodeOrDie(op.Inode, true)
+ 	fs.mu.Unlock()
+ 
+ 	// XXX/is this a dir?
+@@ -925,7 +927,7 @@ func (fs *Goofys) OpenFile(
+ 	ctx context.Context,
+ 	op *fuseops.OpenFileOp) (err error) {
+ 	fs.mu.Lock()
+-	in := fs.getInodeOrDie(op.Inode)
++	in := fs.getInodeOrDie(op.Inode, true)
+ 	fs.mu.Unlock()
+ 
+ 	fh := in.OpenFile(fs)
+@@ -1014,7 +1016,7 @@ func (fs *Goofys) CreateFile(
+ 	op *fuseops.CreateFileOp) (err error) {
+ 
+ 	fs.mu.Lock()
+-	parent := fs.getInodeOrDie(op.Parent)
++	parent := fs.getInodeOrDie(op.Parent, true)
+ 	fs.mu.Unlock()
+ 
+ 	inode, fh := parent.Create(fs, op.Name)
+@@ -1052,7 +1054,7 @@ func (fs *Goofys) MkDir(
+ 	op *fuseops.MkDirOp) (err error) {
+ 
+ 	fs.mu.Lock()
+-	parent := fs.getInodeOrDie(op.Parent)
++	parent := fs.getInodeOrDie(op.Parent, true)
+ 	fs.mu.Unlock()
+ 
+ 	// ignore op.Mode for now
+@@ -1084,10 +1086,19 @@ func (fs *Goofys) RmDir(
+ 	op *fuseops.RmDirOp) (err error) {
+ 
+ 	fs.mu.Lock()
+-	parent := fs.getInodeOrDie(op.Parent)
++	parent := fs.getInodeOrDie(op.Parent, true)
+ 	fs.mu.Unlock()
+ 
+ 	err = parent.RmDir(fs, op.Name)
++	if err == nil {
++		inode, _ := fs.inodesCache[parent.getChildName(op.Name)]
++		if inode != nil {
++			fs.mu.Lock()
++			delete(fs.inodes, inode.Id)
++			delete(fs.inodesCache, *inode.FullName)
++			fs.mu.Unlock()
++		}
++         }
+ 	parent.logFuse("<-- RmDir", op.Name, err)
+ 	return
+ }
+@@ -1097,7 +1108,7 @@ func (fs *Goofys) SetInodeAttributes(
+ 	op *fuseops.SetInodeAttributesOp) (err error) {
+ 
+ 	fs.mu.Lock()
+-	inode := fs.getInodeOrDie(op.Inode)
++	inode := fs.getInodeOrDie(op.Inode, true)
+ 	fs.mu.Unlock()
+ 
+ 	attr, err := inode.GetAttributes(fs)
+@@ -1130,7 +1141,7 @@ func (fs *Goofys) Unlink(
+ 	op *fuseops.UnlinkOp) (err error) {
+ 
+ 	fs.mu.Lock()
+-	parent := fs.getInodeOrDie(op.Parent)
++	parent := fs.getInodeOrDie(op.Parent, true)
+ 	fs.mu.Unlock()
+ 
+ 	err = parent.Unlink(fs, op.Name)
+@@ -1148,8 +1159,8 @@ func (fs *Goofys) Rename(
+ 	op *fuseops.RenameOp) (err error) {
+ 
+ 	fs.mu.Lock()
+-	parent := fs.getInodeOrDie(op.OldParent)
+-	newParent := fs.getInodeOrDie(op.NewParent)
++	parent := fs.getInodeOrDie(op.OldParent, true)
++	newParent := fs.getInodeOrDie(op.NewParent, true)
+ 	fs.mu.Unlock()
+ 
+ 	err = parent.Rename(fs, op.OldName, newParent, op.NewName)
