@@ -431,7 +431,9 @@ func (parent *Inode) RmDir(
 	if err != nil {
 		return mapAwsError(err)
 	}
+	// fs.ServerInterface.InvalidateEntry()
 
+	// if delete success, and if not flock ,we need notify kernel to delete this entry.
 	return
 }
 

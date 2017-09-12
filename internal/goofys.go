@@ -102,6 +102,12 @@ type Goofys struct {
 	restorers   *Ticket
 
 	forgotCnt uint32
+	//    Conn *connection
+	//   Mfs interface {}how use interface?
+	Mfs *fuse.MountedFileSystem
+	//Server interface{}
+	// no need recode ,can inmdeiat export and use ,but we should have the server.
+	ServerInterface fuse.Server
 }
 
 var s3Log = GetLogger("s3")
@@ -579,6 +585,8 @@ func (fs *Goofys) allocateInodeId() (id fuseops.InodeID) {
 
 func expired(cache time.Time, ttl time.Duration) bool {
 	return !cache.Add(ttl).After(time.Now())
+	// cache+ttl wheath after > now, no expired .if true, then return false
+	// else return true.when
 }
 
 func (fs *Goofys) LookUpInode(
@@ -1010,6 +1018,26 @@ func (fs *Goofys) RmDir(
 	fs.mu.Unlock()
 
 	err = parent.RmDir(op.Name)
+	if err == nil {
+
+		//	fs.ServerInterface.InvalidateEntry(op.Parent, op.Name)
+		//	fs.ServerInterface.NotifyDelete(op.Parent,child,op.Name)
+		//inode, _ := fs.inodesCache[parent.getChildName(op.Name)]
+		// should be path compents. not fullname
+		inode := parent.findChild(op.Name)
+		if inode != nil {
+			fs.mu.Lock()
+			//	fs.ServerInterface.NotifyDelete(op.Parent, inode.Id, op.Name)
+			//	fs.ServerInterface.InvalidateEntry(op.Parent, op.Name)
+			// need consider inode ref?
+			//	fs.ServerInterface.InvalidateInode(inode.Id, 0, 0)
+			//fs.ServerInterface.InvalidateInode(op.Parent, 0, 0)
+
+			//delete(fs.inodes, inode.Id)
+			//	delete(fs.inodesCache, *inode.FullName)
+			fs.mu.Unlock()
+		}
+	}
 	parent.logFuse("<-- RmDir", op.Name, err)
 	return
 }
