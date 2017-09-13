@@ -91,7 +91,8 @@ func Mount(
 
 	// Mount the file system.
 	mountCfg := &fuse.MountConfig{
-		FSName:                  bucketName,
+		SubType:                 "goofys",
+		FSName:                  flags.Endpoint + ":" + bucketName,
 		Options:                 flags.MountOptions,
 		ErrorLogger:             GetStdLogger(NewLogger("fuse"), logrus.ErrorLevel),
 		DisableWritebackCaching: true,
