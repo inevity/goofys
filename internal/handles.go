@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/private/protocol/rest"
 	"github.com/aws/aws-sdk-go/service/s3"
 
 	"github.com/jacobsa/fuse"
@@ -234,14 +235,14 @@ func (parent *Inode) insertChildUnlocked(inode *Inode) {
 		// not found = new value is the biggest
 		parent.dir.Children = append(parent.dir.Children, inode)
 	} else {
-		s3Log.Infoln("new parent name", i, *parent.Children[i].Name)
-		if *parent.Children[i].Name == *inode.Name {
+		s3Log.Infoln("new parent name", i, *parent.dir.Children[i].Name)
+		if *parent.dir.Children[i].Name == *inode.Name {
 			// if rename dst have inode exist,we should replace this inode,
 			// because s3copy have overwrite this dst object.
 			// because dst have exist,we should warn us to whether to overwrite this file
 			// when on posix filesystem ,but s3copy
 			// is overwrite,so we grant this op
-			parent.Children[i] = inode
+			parent.dir.Children[i] = inode
 			return
 			// parent.removeChildUnlocked(parent.Children[i])
 			//	panic(fmt.Sprintf("double insert of %v", parent.getChildName(*inode.Name)))
@@ -871,7 +872,7 @@ func copyObjectMaybeMultipart(fs *Goofys, size int64, from string, to string, sr
 
 	params := &s3.CopyObjectInput{
 		Bucket:            &fs.bucket,
-		CopySource:        aws.String(pathEscape(from)),
+		CopySource:        aws.String(rest.EscapePath(from, false)),
 		Key:               fs.key(to),
 		StorageClass:      &fs.flags.StorageClass,
 		ContentType:       fs.getMimeType(to),
@@ -1064,8 +1065,8 @@ func (parent *Inode) LookUpInodeDir(name string, c chan s3.ListObjectsOutput, er
 func (parent *Inode) LookUpInodeMaybeDir(name string, fullName string) (inode *Inode, err error) {
 	errObjectChan := make(chan error, 1)
 	objectChan := make(chan s3.HeadObjectOutput, 1)
-	errDirBlobChan := make(chan error, 1)
-	dirBlobChan := make(chan s3.HeadObjectOutput, 1)
+	//errDirBlobChan := make(chan error, 1)
+	//dirBlobChan := make(chan s3.HeadObjectOutput, 1)
 	var errDirChan chan error
 	var dirChan chan s3.ListObjectsOutput
 
