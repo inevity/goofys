@@ -679,6 +679,7 @@ func (fs *Goofys) ForgetInode(
 	stale := inode.DeRef(op.N)
 
 	if stale {
+		inode.logFuse("DeRef", "stale")
 		delete(fs.inodes, op.Inode)
 		if inode.Parent != nil {
 			inode.Parent.removeChild(inode)
