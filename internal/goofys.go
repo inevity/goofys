@@ -691,6 +691,7 @@ func (fs *Goofys) ForgetInode(
 	stale := inode.DeRef(op.N)
 
 	if stale {
+		inode.logFuse("DeRef", "stale")
 		delete(fs.inodes, op.Inode)
 		fs.forgotCnt += 1
 		fs.mu.Unlock()

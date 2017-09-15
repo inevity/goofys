@@ -16,6 +16,7 @@
 package main
 
 import (
+	"github.com/google/gops/agent"
 	goofys "github.com/kahing/goofys/api"
 	. "github.com/kahing/goofys/internal"
 
@@ -42,14 +43,11 @@ import (
 	//"runtime"
 	// "log"
 	// "time"
-	"net/http"
-
 	//   "github.com/e-dard/netbug"
 
-	"github.com/google/gops/agent"
+	"net/http"
+	_ "net/http/pprof"
 )
-
-import _ "net/http/pprof"
 
 var log = GetLogger("main")
 
@@ -166,16 +164,6 @@ func debug() {
 }
 
 func main() {
-	opts := &agent.Options{}
-	opts.Addr = ":48333"
-
-	if err := agent.Listen(opts); err != nil {
-		//log.Fatal(err)
-		log.Fatalf("v%", err)
-	}
-	go func() {
-		http.ListenAndServe(":48334", nil)
-	}()
 	VersionHash = Version
 
 	massagePath()
@@ -285,6 +273,18 @@ func main() {
 			}
 
 			log.Println("Successfully exiting.")
+
+			opts := &agent.Options{}
+			opts.Addr = ":48333"
+
+			if err := agent.Listen(opts); err != nil {
+				//log.Fatal(err)
+				log.Fatalf("v%", err)
+			}
+			go func() {
+				http.ListenAndServe(":48334", nil)
+			}()
+
 		}
 		return
 	}
