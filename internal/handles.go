@@ -182,6 +182,9 @@ func (parent *Inode) findChildIdxUnlocked(name string) int {
 	return -1
 }
 
+// dentry managment
+// dir children update,need consid this case
+// 1, same name ,diff inode id , hardlink!
 func (parent *Inode) removeChildUnlocked(inode *Inode) {
 	l := len(parent.dir.Children)
 	if l == 0 {
@@ -681,6 +684,8 @@ func (parent *Inode) Rename(from string, newParent *Inode, to string) (err error
 	if err != nil {
 		return
 	}
+	// src dir and !dst dir, find dst whether exist
+	// s3copy src(src size - dst size ) to dst and delete src( -src size ).
 
 	if fromIsDir && !toIsDir {
 		_, err = fs.s3.HeadObject(&s3.HeadObjectInput{

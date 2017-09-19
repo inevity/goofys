@@ -591,13 +591,13 @@ func (fs *Goofys) LookUpInode(
 	parent.mu.Lock()
 	fs.mu.Lock()
 	inode = parent.findChildUnlockedFull(op.Name)
-	if inode != nil {
+	if inode != nil { // found inode
 		ok = true
 		inode.Ref()
 
 		if expired(inode.AttrTime, fs.flags.StatCacheTTL) {
 			ok = false
-			if inode.fileHandles != 0 {
+			if inode.fileHandles != 0 { // file opening
 				// we have an open file handle, object
 				// in S3 may not represent the true
 				// state of the file anyway, so just
@@ -608,19 +608,23 @@ func (fs *Goofys) LookUpInode(
 				inode.logFuse("lookup expired")
 			}
 		}
-	} else {
+	} else { // now found dentry (inode)
 		ok = false
 	}
 	fs.mu.Unlock()
 	parent.mu.Unlock()
 
+	//ok=false meaning relookup to s3
+
 	if !ok {
 		var newInode *Inode
 
 		newInode, err = parent.LookUp(op.Name)
-		if err != nil {
+		//erro from fuse kernel or s3 api
+		if err != nil { //lookup to s3 error
 			if inode != nil {
 				// just kidding! pretend we didn't up the ref
+				// if origin inode ,we need rollback
 				fs.mu.Lock()
 				defer fs.mu.Unlock()
 
@@ -633,24 +637,28 @@ func (fs *Goofys) LookUpInode(
 			return err
 		}
 
+		// now lookup to s3 success! and origin inode have not found
+		// in the parent inode, then create this inode_ID
 		if inode == nil {
 			parent.mu.Lock()
 			// check again if it's there, could have been
 			// added by another lookup or readdir
+			// conflict exsiting?
 			inode = parent.findChildUnlockedFull(op.Name)
 			if inode == nil {
 				fs.mu.Lock()
 				inode = newInode
 				fs.insertInode(parent, inode)
+				//alloct id, update parent attr(dentrys),index the inode!
 				fs.mu.Unlock()
 			}
 			parent.mu.Unlock()
-		} else {
+		} else { //if origin inode exist,need update attr have lookuped .
 			inode.Attributes = newInode.Attributes
 			inode.AttrTime = time.Now()
 		}
 	}
-
+	//construce the entry .
 	op.Entry.Child = inode.Id
 	op.Entry.Attributes = inode.InflateAttributes()
 	op.Entry.AttributesExpiration = time.Now().Add(fs.flags.StatCacheTTL)
@@ -1078,10 +1086,15 @@ func (fs *Goofys) Rename(
 	fs.mu.Lock()
 	parent := fs.getInodeOrDie(op.OldParent)
 	newParent := fs.getInodeOrDie(op.NewParent)
+	// two parent inode
+
+	// for the first ,the inode id should what? maybe nil,negtive dentry
+	// for the second,lookup the name ,then inode exisitng
+
 	fs.mu.Unlock()
 
 	// XXX don't hold the lock the entire time
-	if op.OldParent == op.NewParent {
+	if op.OldParent == op.NewParent { // same inode id, the same parent dir!
 		parent.mu.Lock()
 		defer parent.mu.Unlock()
 	} else {
@@ -1096,10 +1109,18 @@ func (fs *Goofys) Rename(
 		defer parent.mu.Unlock()
 		defer newParent.mu.Unlock()
 	}
+	//no matter two inode id whether like
 
 	err = parent.Rename(op.OldName, newParent, op.NewName)
+	// src dir and !dst dir, find dst whether exist
+	// s3copy src(src size - dst size ) to dst and delete src( -src size ).
+	// all in the goofys dir
+
 	if err != nil {
 		if err == fuse.ENOENT {
+			//this error is from s3,only just use the fuse error code
+			//need rethink
+
 			// if the source doesn't exist, it could be
 			// because this is a new file and we haven't
 			// flushed it yet, pretend that's ok because
@@ -1112,7 +1133,25 @@ func (fs *Goofys) Rename(
 	}
 	if err == nil {
 		inode := parent.findChildUnlockedFull(op.OldName)
+		// found origin inode, update the oldparent and newparetn childeren
 		if inode != nil {
+			// 1,diff parent
+			// found origin inode by name in old parent dir dentrys
+			// remove this dentry from  old parent
+			//  find new inode in the new parent,if found,
+			//    remove this dentry from newparent
+			// update inode content to point to newname nad newparent
+			// insert to newparent
+
+			// 2,same parent
+			// found origin inode  by name in old parent dir dentrys
+			// remove this dentry from  old parent
+			//  find new inode in the new parent,if found,
+			//       remove this dentry from newparent
+			// update inode content to point to newname nad newparent
+			// insert to newparent
+
+			// inode:dentry=1:1,inode:dentry=1:N??
 			inode.mu.Lock()
 			defer inode.mu.Unlock()
 
@@ -1121,12 +1160,26 @@ func (fs *Goofys) Rename(
 			newNode := newParent.findChildUnlocked(op.NewName, inode.isDir())
 			if newNode != nil {
 				newParent.removeChildUnlocked(newNode)
+				// for unlink ,noop to delete inode
+				// for this rename ,should same as unlink?
+				// for second rename repeate, will got forget and stale to delete
+				//       inode and parent dentry.
+				/*
+				 *stale := newNode.DeRef(1)
+				 *if stale {
+				 *    delete(fs.inodes, newNode.Id)
+				 *    parent.removeChild(newNode)
+				 *}
+				 */
+
 			}
 
 			inode.Name = &op.NewName
 			inode.Parent = newParent
 			newParent.insertChildUnlocked(inode)
 		}
+		//not found origin inode in the oldparent!,some bug? or race?
+		//we find by d_revalidation ?
 	}
 	return
 }
