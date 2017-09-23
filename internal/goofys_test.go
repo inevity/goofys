@@ -1025,8 +1025,18 @@ func (s *GoofysTest) runFuseTest(t *C, mountPoint string, umount bool, cmdArgs .
 		cmd.Stdout = w
 		cmd.Stderr = w
 	}
+	var outb, errb bytes.Buffer
+	cmd.Stdout = &outb
+	cmd.Stderr = &errb
 
 	err := cmd.Run()
+	//	cmdOut, err := cmd.Output()
+	//fmt.Println(string(cmdOut))
+	//fmt.Println(string(cmdOut))
+	//	fmt.Println(w.String())
+	fmt.Println(outb.String(), errb.String())
+	//fmt.Println(errb.String())
+
 	t.Assert(err, IsNil)
 }
 
