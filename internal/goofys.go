@@ -211,7 +211,7 @@ func (fs *Goofys) fallbackV2Signer() (err error) {
 		return fuse.EINVAL
 	}
 
-	s3Log.Infoln("Falling back to v2 signer")
+	//s3Log.Infoln("Falling back to v2 signer")
 	fs.v2Signer = true
 	fs.s3 = fs.newS3()
 	return
@@ -352,8 +352,10 @@ func (fs *Goofys) detectBucketLocationByHEAD() (err error, isAws bool) {
 
 	if len(region) != 0 {
 		if region[0] != *fs.awsConfig.Region {
-			s3Log.Infof("Switching from region '%v' to '%v'",
-				*fs.awsConfig.Region, region[0])
+			/*
+			 *s3Log.Infof("Switching from region '%v' to '%v'",
+			 *    *fs.awsConfig.Region, region[0])
+			 */
 			fs.awsConfig.Region = &region[0]
 		}
 
