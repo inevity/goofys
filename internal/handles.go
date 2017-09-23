@@ -191,9 +191,21 @@ func (parent *Inode) removeChildUnlocked(inode *Inode) {
 		return
 	}
 	i := sort.Search(l, parent.findInodeFunc(*inode.Name, inode.isDir()))
-	if i >= l || *parent.dir.Children[i].Name != *inode.Name {
-		panic(fmt.Sprintf("%v.removeName(%v) but child not found: %v",
-			*parent.FullName(), *inode.Name, i))
+	/*
+	 *if i >= l || *parent.dir.Children[i].Name != *inode.Name {
+	 *    panic(fmt.Sprintf("%v.removeName(%v) but child not found: %v",
+	 *        *parent.FullName(), *inode.Name, i))
+	 *}
+	 */
+	if i >= l {
+		//	panic(fmt.Sprintf("%v.removeName(%v) but child not found: %v",
+		//		*parent.FullName(), *inode.Name, i))
+		parent.logFuse("remove inode child not exist", *inode.Name)
+	}
+	// fd opend to rm dir, maybe we should reconsider the dentry/dirdents,inode managment
+	// if we use flock ,we can do it another way
+	if *parent.dir.Children[i].Name != *inode.Name {
+		parent.logFuse("remove inode child not exist", *inode.Name)
 	}
 	if parent.dir.Children[i].Id == inode.Id {
 		copy(parent.dir.Children[i:], parent.dir.Children[i+1:])
@@ -1025,6 +1037,7 @@ func (parent *Inode) readDirFromCache(offset fuseops.DirOffset) (en *DirHandleEn
 		}
 
 	}
+	//	fuseLog.Debugf("readdir from dir.Children", offset)
 	return
 }
 

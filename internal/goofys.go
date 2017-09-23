@@ -572,7 +572,10 @@ func (fs *Goofys) allocateInodeId() (id fuseops.InodeID) {
 
 func expired(cache time.Time, ttl time.Duration) bool {
 	return !cache.Add(ttl).After(time.Now())
-	// cache+ttl wheath after > now, no expired .if true, then return false
+	// cache+ttl where after > now, now expired
+	// if true, then return false ,expire.
+	// if false,after < now, not expired, return true.
+	//                   if true, then return false
 	// else return true.when
 }
 
@@ -586,6 +589,7 @@ func (fs *Goofys) LookUpInode(
 
 	fs.mu.Lock()
 	parent := fs.getInodeOrDie(op.Parent)
+	// whether expire?
 	fs.mu.Unlock()
 
 	parent.mu.Lock()
@@ -596,6 +600,8 @@ func (fs *Goofys) LookUpInode(
 		inode.Ref()
 
 		if expired(inode.AttrTime, fs.flags.StatCacheTTL) {
+
+			inode.logFuse("time ", inode.AttrTime.Add(fs.flags.StatCacheTTL))
 			ok = false
 			if inode.fileHandles != 0 { // file opening
 				// we have an open file handle, object
@@ -604,6 +610,7 @@ func (fs *Goofys) LookUpInode(
 				// return what we know which is
 				// potentially more accurate
 				ok = true
+				inode.logFuse("fd opened")
 			} else {
 				inode.logFuse("lookup expired")
 			}
@@ -648,12 +655,15 @@ func (fs *Goofys) LookUpInode(
 			if inode == nil {
 				fs.mu.Lock()
 				inode = newInode
+				inode.logFuse("insert inode ", parent, inode)
 				fs.insertInode(parent, inode)
 				//alloct id, update parent attr(dentrys),index the inode!
 				fs.mu.Unlock()
 			}
 			parent.mu.Unlock()
 		} else { //if origin inode exist,need update attr have lookuped .
+
+			inode.logFuse("origin inode exist, update its attrtime")
 			inode.Attributes = newInode.Attributes
 			inode.AttrTime = time.Now()
 		}
@@ -798,10 +808,13 @@ func (fs *Goofys) ReadDir(
 
 	for i := op.Offset; ; i++ {
 		e, err := dh.ReadDir(i)
+		// read dentry from cache or list object ,return on
 		if err != nil {
+			dh.inode.logFuse("<-- ReadDir err", *inode.Name)
 			return err
 		}
 		if e == nil {
+			dh.inode.logFuse("<-- ReadDir end", *inode.Name)
 			// we've reached the end, if this was read
 			// from S3 then update the cache time
 			if readFromS3 {
@@ -813,15 +826,22 @@ func (fs *Goofys) ReadDir(
 
 		if e.Inode == 0 {
 			readFromS3 = true
+			dh.inode.logFuse("<-- ReadDir insert child", *inode.Name, *e.Name)
 			fs.insertInodeFromDirEntry(inode, e)
+			//alloc inode id to e,update parent's children
 		}
 
 		n := fuseutil.WriteDirent(op.Dst[op.BytesRead:], makeDirEntry(e))
 		if n == 0 {
 			break
 		}
+		if readFromS3 == true {
 
-		dh.inode.logFuse("<-- ReadDir", *e.Name, e.Offset)
+			dh.inode.logFuse("<-- ReadDir", *e.Name, e.Offset, "from s3")
+		} else {
+
+			dh.inode.logFuse("<-- ReadDir", *e.Name, e.Offset, "from cache")
+		}
 
 		op.BytesRead += n
 	}
@@ -1011,24 +1031,78 @@ func (fs *Goofys) RmDir(
 
 	err = parent.RmDir(op.Name)
 	if err == nil {
+		// fd open issue
 
-		//	fs.ServerInterface.InvalidateEntry(op.Parent, op.Name)
-		//	fs.ServerInterface.NotifyDelete(op.Parent,child,op.Name)
-		//inode, _ := fs.inodesCache[parent.getChildName(op.Name)]
-		// should be path compents. not fullname
-		inode := parent.findChild(op.Name)
+		/*
+		 *        //	fs.ServerInterface.InvalidateEntry(op.Parent, op.Name)
+		 *        //	fs.ServerInterface.NotifyDelete(op.Parent,child,op.Name)
+		 *        //inode, _ := fs.inodesCache[parent.getChildName(op.Name)]
+		 *        // should be path compents. not fullname
+		 *        inode := parent.findChild(op.Name)
+		 *        if inode != nil {
+		 *            fs.mu.Lock()
+		 *            //	fs.ServerInterface.NotifyDelete(op.Parent, inode.Id, op.Name)
+		 *            //	fs.ServerInterface.InvalidateEntry(op.Parent, op.Name)
+		 *            // need consider inode ref?
+		 *            //	fs.ServerInterface.InvalidateInode(inode.Id, 0, 0)
+		 *            //fs.ServerInterface.InvalidateInode(op.Parent, 0, 0)
+		 *
+		 *            //delete(fs.inodes, inode.Id)
+		 *            //	delete(fs.inodesCache, *inode.FullName)
+		 *            fs.mu.Unlock()
+		 *        }
+		 */
+		inode := parent.findChildUnlockedFull(op.Name) // by name
+		//inode := parent.findChild(op.Name)
+		// we need invaldie inode.
+		// for dentry, we accord lookup to got dentry. we use kernel forget to rmdentry
+		// if fd open, inode if not expire,will got this. so even fd open,we still to
+		// invalide the inode
 		if inode != nil {
-			fs.mu.Lock()
-			//	fs.ServerInterface.NotifyDelete(op.Parent, inode.Id, op.Name)
-			//	fs.ServerInterface.InvalidateEntry(op.Parent, op.Name)
-			// need consider inode ref?
-			//	fs.ServerInterface.InvalidateInode(inode.Id, 0, 0)
-			//fs.ServerInterface.InvalidateInode(op.Parent, 0, 0)
+			inode.mu.Lock() // vs fs.mu.Lock?
+			defer inode.mu.Unlock()
+			//delete(fs.inodes, op.Inode)
+			// we not ourself to delete inode ,otherwise when kernel have op.Inode to lookup
+			// we will get panic.
+			// parent.removeChildUnlocked(inode)
+			// we need invadi dentry ,not to delete
+			//because we have remove the child ,and when next lookup,will find, check expire,
+			// to s3 lookup ,then not found.
+			//so we can expire the inode  or delete inode by oursel(lookup lead to panic according inodeid)
 
-			//delete(fs.inodes, inode.Id)
-			//	delete(fs.inodesCache, *inode.FullName)
-			fs.mu.Unlock()
+			inode.AttrTime = time.Time{}
+			// we need invaditate the parent,but how readdir impl?
+			parent.removeChildUnlocked(inode)
+			//this is inode cache, need update quickly
+
+			//update children
+			//if we this remove this children ,now later fd close ,need to forget this inode .so we should use
+			//the refcount ?
+			//inode.DeRef(1) but the Children alse not update
+
+			parent.AttrTime = time.Time{}
+			//update attr,need relookup.
+
+			// because we have not delete this paretn inode ,only update its member.so we need pay attension !
+
+			// we should inly inva this entry ?
+			// or inav parent 's all chilren
+			// invalid lookup parent
+			parent.dir.DirTime = time.Time{}
+
+			// we need also inva other dentry
 		}
+
+		//	inode := fs.getInodeOrDie(op.Inode)
+		//	stale := inode.DeRef(op.N)
+		//
+		//	if stale {
+		//		inode.logFuse("DeRef", "stale")
+		//		delete(fs.inodes, op.Inode)
+		//		if inode.Parent != nil {
+		//			inode.Parent.removeChild(inode)
+		//		}
+		//	}
 	}
 	parent.logFuse("<-- RmDir", op.Name, err)
 	return
