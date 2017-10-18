@@ -135,13 +135,33 @@ func selectTestConfig(t *C) *aws.Config {
 		}
 	} else if hasEnv("MINIO") {
 		return &aws.Config{
-			Credentials: credentials.NewStaticCredentials("Q3AM3UQ867SPQQA43P2F",
-				"zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG", ""),
+			/*
+			 *Credentials: credentials.NewStaticCredentials("Q3AM3UQ867SPQQA43P2F",
+			 *  "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG", ""),
+			 */
+			Credentials: credentials.NewStaticCredentials("MW6KFV538WXD3J2L201A",
+				"e7Bgh2nx6rFkLWKJBnVWUlOuWpg8LFSDAm//ZQHl", ""),
 			Region: aws.String("us-east-1"),
 			//LogLevel:         aws.LogLevel(aws.LogDebug | aws.LogDebugWithSigning),
 			S3ForcePathStyle: aws.Bool(true),
-			Endpoint:         aws.String("https://play.minio.io:9000"),
+			//Endpoint:         aws.String("https://play.minio.io:9000"),
+			Endpoint: aws.String("http://127.0.0.1:9000"),
 		}
+	} else if hasEnv("DnionS3") {
+		addr := "cs6:6081"
+
+		err := waitFor(t, addr)
+		t.Assert(err, IsNil)
+
+		return &aws.Config{
+			Credentials: credentials.NewStaticCredentials("L4N3XFWJ2XI5JUHSK99R",
+				"c8Iof0LYhL8vOleEN10Oqya9DKhpqiPlGRCLx1tR", ""),
+			Region: aws.String("us-east-1"),
+			//LogLevel:         aws.LogLevel(aws.LogDebug | aws.LogDebugWithSigning),
+			S3ForcePathStyle: aws.Bool(true),
+			Endpoint:         aws.String("http://" + addr),
+		}
+
 	} else {
 		addr := "127.0.0.1:8080"
 
@@ -240,16 +260,16 @@ func (s *GoofysTest) setupEnv(t *C, bucket string, env map[string]io.ReadSeeker,
 
 func (s *GoofysTest) setupDefaultEnv(t *C, public bool) (bucket string) {
 	s.env = map[string]io.ReadSeeker{
-		"file1":           nil,
-		"file2":           nil,
-		"dir1/file3":      nil,
-		"dir2/dir3/":      nil,
+		"file1":      nil,
+		"file2":      nil,
+		"dir1/file3": nil,
+		//	"dir2/dir3/":      nil,
 		"dir2/dir3/file4": nil,
-		"dir4/":           nil,
-		"dir4/file5":      nil,
-		"empty_dir/":      nil,
-		"empty_dir2/":     nil,
-		"zero":            bytes.NewReader([]byte{}),
+		//	"dir4/":           nil,
+		"dir4/file5": nil,
+		//	"empty_dir/":      nil,
+		//	"empty_dir2/":     nil,
+		//	"zero":            bytes.NewReader([]byte{}),
 	}
 
 	bucket = "goofys-test-" + RandStringBytesMaskImprSrc(16)
