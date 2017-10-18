@@ -298,10 +298,11 @@ func (b S3ReadBuffer) Init(fh *FileHandle, offset uint64, size uint32) *S3ReadBu
 			//	return nil, syscall.EACCES
 
 			//req.Time.Add(-1200)
-			req.Time.AddDate(-1, 2, 3)
+			req.Time = req.Time.AddDate(-1, 2, 3)
 			//fh.inode.logFuse("req time 20971520", req.Time.String())
 
 		}
+		fh.inode.logFuse("req timeend", req.Time.String())
 
 		err := req.Send()
 		if err != nil {
