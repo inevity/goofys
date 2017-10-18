@@ -134,6 +134,11 @@ func NewGoofys(ctx context.Context, bucket string, awsConfig *aws.Config, flags 
 		awsConfig.LogLevel = aws.LogLevel(aws.LogDebug | aws.LogDebugWithRequestErrors | aws.LogDebugWithSigning)
 		s3Log.Level = logrus.DebugLevel
 	}
+	if flags.DebugFuse {
+		fuseLog.Level = logrus.DebugLevel
+		log.Level = logrus.DebugLevel
+		//	mountCfg.DebugLogger = GetStdLogger(fuseLog, logrus.DebugLevel)
+	}
 
 	fs.awsConfig = awsConfig
 	fs.sess = session.New(awsConfig)
@@ -1019,26 +1024,21 @@ func (fs *Goofys) RmDir(
 	fs.mu.Unlock()
 
 	err = parent.RmDir(op.Name)
-	if err == nil {
-
-		//	fs.ServerInterface.InvalidateEntry(op.Parent, op.Name)
-		//	fs.ServerInterface.NotifyDelete(op.Parent,child,op.Name)
-		//inode, _ := fs.inodesCache[parent.getChildName(op.Name)]
-		// should be path compents. not fullname
-		inode := parent.findChild(op.Name)
-		if inode != nil {
-			fs.mu.Lock()
-			//	fs.ServerInterface.NotifyDelete(op.Parent, inode.Id, op.Name)
-			//	fs.ServerInterface.InvalidateEntry(op.Parent, op.Name)
-			// need consider inode ref?
-			//	fs.ServerInterface.InvalidateInode(inode.Id, 0, 0)
-			//fs.ServerInterface.InvalidateInode(op.Parent, 0, 0)
-
-			//delete(fs.inodes, inode.Id)
-			//	delete(fs.inodesCache, *inode.FullName)
-			fs.mu.Unlock()
-		}
-	}
+	/*
+	 *    if err == nil {
+	 *        inode := parent.findChildUnlockedFull(op.Name) // by name
+	 *        if inode != nil {
+	 *            inode.mu.Lock() // vs fs.mu.Lock?
+	 *            defer inode.mu.Unlock()
+	 *            inode.AttrTime = time.Time{}
+	 *            inode.Parent = nil
+	 *            parent.removeChildUnlocked(inode)
+	 *
+	 *            parent.AttrTime = time.Time{}
+	 *            parent.dir.DirTime = time.Time{}
+	 *        }
+	 *    }
+	 */
 	parent.logFuse("<-- RmDir", op.Name, err)
 	return
 }

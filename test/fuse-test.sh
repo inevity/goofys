@@ -446,6 +446,88 @@ function test_rm_rf_dir {
        exit 1
    fi
 }
+function test_rmdir_withfdopen {
+    
+#    echo "aaaaaa" > "$1"
+#    mkdir -p  $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR/test
+#    cp $1  $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR/test/testfile
+#    mv $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR/test/testfile $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR/test/rename
+#    
+#    lsout=`ls $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR/test`
+#    lslahout=`ls -lah $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR/test`
+#    
+#    echo "$lsout" | grep -q "rename"  > /dev/null 2>&1
+#    if [ "$?" != "0" ]; then
+#      echo "file rename missing"
+#      exit 1
+#    fi
+#
+#    echo "$lslahout" | grep -q "rename"  > /dev/null 2>&1
+#    if [ "$?" != "0" ]; then
+#      echo "file rename missing"
+#      exit 1
+#    fi
+#
+#
+   # mkdir /mnt/s3/test/dir3
+    mkdir -p  $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR/test
+    mkdir -p  $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR/test1
+    touch  $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR/repl
+    touch  $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR/uvvv
+
+
+#    ls -lah $TEST_BUCKET_MOUNT_POINT_1/
+
+    #open dir3
+    #cd use fd,bash how opendir
+    #exec 60<>/mnt/s3/test/dir3
+    # how dir process openfd
+    #exec 8<>$TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR/test
+   #/root/deploy/test/lsunconsistency $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR/test a;
+   nohup /root/deploy/test/lsunconsistency $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR/test a > /dev/null 2>&1 &
+   openpid=$!
+    #exec <>/mnt/s3/test/dir3
+    #rm -rf /mnt/s3/test/dir3
+  #  shell_exec('/root/deploy/test/lsunconsistency $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR/test a > /dev/null 2>/dev/null &')
+    rm -rf $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR/test
+   # ls -lha /mnt/s3/test
+    #ls -lha $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR
+   # ls $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR
+
+    lsout=`ls $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR`
+
+    echo "$lsout"
+
+        #    lslahout=`ls -lah $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR`
+        #    
+        # #   echo "$lsout" | grep -q "rename"  > /dev/null 2>&1
+        #    #echo "$lsout"
+        #    #if [ "$?" != "0" ]; then
+        #      #echo "file rename missing"
+        #      #exit 1
+        #    #fi
+        #
+        #    echo "$lslahout"
+        #    #echo "$lslahout" | grep -q "rename"  > /dev/null 2>&1
+        #    #if [ "$?" != "0" ]; then
+        #      #echo "file rename missing"
+        #      #exit 1
+        #    #fi
+        #
+        #   ## exec 8>&-
+        #   #exit 0
+        #   # pgrep lsunconsistency |kill -9
+        #    #killall /root/deploy/test/lsunconsistency
+        #  #  if [ $openpid gt "0" ]; then
+      echo `kill -9  $openpid`
+        #  #  fi
+        #
+        #    lsout=`ls $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR`
+        #    echo "$lsout"
+        #    lslahout=`ls -lah $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR`
+        #    echo "$lslahout"
+    
+}
 
 function test_write_after_seek_ahead {
    echo "Test writes succeed after a seek ahead"
@@ -479,6 +561,7 @@ function run_all_tests {
     if [ "$CATFS" == "true" ]; then
         test_write_after_seek_ahead
     fi
+    test_rmdir_withfdopen
 }
 
 # Mount the bucket
@@ -503,3 +586,4 @@ run_all_tests
 # Unmount the bucket
 popd
 echo "All tests complete."
+exit 0

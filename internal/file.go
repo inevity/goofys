@@ -58,7 +58,9 @@ type FileHandle struct {
 }
 
 const MAX_READAHEAD = uint32(100 * 1024 * 1024)
-const READAHEAD_CHUNK = uint32(20 * 1024 * 1024)
+
+//const READAHEAD_CHUNK = uint32(20 * 1024 * 1024)
+const READAHEAD_CHUNK = uint32(10 * 1024 * 1024)
 
 func NewFileHandle(in *Inode) *FileHandle {
 	fh := &FileHandle{inode: in}
@@ -283,15 +285,39 @@ func (b S3ReadBuffer) Init(fh *FileHandle, offset uint64, size uint32) *S3ReadBu
 			Key:    fs.key(*fh.inode.FullName()),
 		}
 
+		fh.inode.logFuse("buffer init,off,size,key", offset, size, *fh.inode.FullName())
+
 		bytes := fmt.Sprintf("bytes=%v-%v", offset, offset+uint64(size)-1)
 		params.Range = &bytes
 
 		req, resp := fs.s3.GetObjectRequest(params)
+		fh.inode.logFuse("req time", req.Time.String())
+
+		if offset == uint64(20971520) {
+			// err = 13
+			//	return nil, syscall.EACCES
+
+			//req.Time.Add(-1200)
+			req.Time.AddDate(-1, 2, 3)
+			//fh.inode.logFuse("req time 20971520", req.Time.String())
+
+		}
 
 		err := req.Send()
 		if err != nil {
+			fh.inode.logFuse("buffer init,send err", offset, size, *fh.inode.FullName(), err)
 			return nil, mapAwsError(err)
 		}
+		/*
+		 *    if offset == uint64(20971520) {
+		 *      // err = 13
+		 *      return nil, syscall.EACCES
+		 *
+		 *      //req.Time.Add(120)
+		 *      //fh.inode.logFuse("req time 20971520", req.Time.String())
+		 *
+		 *    }
+		 */
 
 		return resp.Body, nil
 	})
@@ -372,11 +398,13 @@ func (fh *FileHandle) readAhead(offset uint64, needAtLeast int) (err error) {
 			if readAheadBuf != nil {
 				fh.buffers = append(fh.buffers, readAheadBuf)
 				existingReadahead += size
+				fh.inode.logFuse("< ReadAheadinit fh.buffers len:off:size:existingReadahead", len(fh.buffers), off, size, existingReadahead)
 			} else {
 				if existingReadahead != 0 {
 					// don't do more readahead now, but don't fail, cross our
 					// fingers that we will be able to allocate the buffers
 					// later
+					fh.inode.logFuse("< ReadAheadinit fail fh.buffers len:off:size:existingReadahead", len(fh.buffers), off, size, existingReadahead)
 					return nil
 				} else {
 					return syscall.ENOMEM
@@ -472,6 +500,7 @@ func (fh *FileHandle) readFile(offset int64, buf []byte) (bytesRead int, err err
 	}
 
 	if !fs.flags.Cheap && fh.seqReadAmount >= uint64(READAHEAD_CHUNK) && fh.numOOORead < 3 {
+		fh.inode.logFuse("to readahead")
 		if fh.reader != nil {
 			fh.inode.logFuse("cutover to the parallel algorithm")
 			fh.reader.Close()
@@ -481,6 +510,7 @@ func (fh *FileHandle) readFile(offset int64, buf []byte) (bytesRead int, err err
 		err = fh.readAhead(uint64(offset), len(buf))
 		if err == nil {
 			bytesRead, err = fh.readFromReadAhead(uint64(offset), buf)
+			fh.inode.logFuse("have readahead off,havered %v %v", offset, bytesRead)
 			return
 		} else {
 			// fall back to read serially
@@ -493,6 +523,7 @@ func (fh *FileHandle) readFile(offset int64, buf []byte) (bytesRead int, err err
 		}
 	}
 
+	fh.inode.logFuse("to readfromstrem if readahead fail or skip")
 	bytesRead, err = fh.readFromStream(offset, buf)
 
 	return

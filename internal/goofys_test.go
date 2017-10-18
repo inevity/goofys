@@ -188,7 +188,7 @@ func (s *GoofysTest) deleteBucket(t *C) {
 }
 
 func (s *GoofysTest) TearDownSuite(t *C) {
-	s.deleteBucket(t)
+	//	s.deleteBucket(t)
 }
 
 func (s *GoofysTest) setupEnv(t *C, bucket string, env map[string]io.ReadSeeker, public bool) {
@@ -201,6 +201,7 @@ func (s *GoofysTest) setupEnv(t *C, bucket string, env map[string]io.ReadSeeker,
 	}
 	_, err := s.s3.CreateBucket(&param)
 	t.Assert(err, IsNil)
+	t.Log(bucket)
 
 	for path, r := range env {
 		if r == nil {
@@ -221,12 +222,15 @@ func (s *GoofysTest) setupEnv(t *C, bucket string, env map[string]io.ReadSeeker,
 		}
 
 		_, err := s.s3.PutObject(params)
+		t.Log(path)
 		t.Assert(err, IsNil)
 	}
 
+	t.Log("\n double check")
 	// double check
 	for path := range env {
 		params := &s3.HeadObjectInput{Bucket: &bucket, Key: &path}
+		t.Log(path)
 		_, err := s.s3.HeadObject(params)
 		t.Assert(err, IsNil)
 	}
@@ -278,6 +282,8 @@ func (s *GoofysTest) SetUpTest(t *C) {
 		FileMode:     0700,
 		Uid:          uint32(uid),
 		Gid:          uint32(gid),
+		DebugFuse:    true,
+		DebugS3:      true,
 	}
 	s.fs = NewGoofys(context.Background(), bucket, s.awsConfig, flags)
 	t.Assert(s.fs, NotNil)
@@ -1025,12 +1031,23 @@ func (s *GoofysTest) runFuseTest(t *C, mountPoint string, umount bool, cmdArgs .
 		cmd.Stdout = w
 		cmd.Stderr = w
 	}
+	var outb, errb bytes.Buffer
+	cmd.Stdout = &outb
+	cmd.Stderr = &errb
 
 	err := cmd.Run()
+	//	err := cmd.Run()
+	//      cmdOut, err := cmd.Output()
+	//fmt.Println(string(cmdOut))
+	//fmt.Println(string(cmdOut))
+	//      fmt.Println(w.String())
+	fmt.Println(outb.String(), errb.String())
+	//fmt.Println(errb.String())
+
 	t.Assert(err, IsNil)
 }
 
-func (s *GoofysTest) TestFuse(t *C) {
+func (s *GoofysTest) TestFuseRaw(t *C) {
 	mountPoint := "/tmp/mnt" + s.fs.bucket
 
 	s.runFuseTest(t, mountPoint, true, "../test/fuse-test.sh", mountPoint)
@@ -1950,4 +1967,201 @@ func (s *GoofysTest) TestRead403(t *C) {
 
 	_, err = fh.ReadFile(0, buf)
 	t.Assert(err, Equals, syscall.EACCES)
+}
+
+func (s *GoofysTest) TestRmdirWithDiropen(t *C) {
+	mountPoint := "/tmp/mnt" + s.fs.bucket
+	s.mount(t, mountPoint)
+	defer s.umount(t, mountPoint)
+
+	err := os.MkdirAll(mountPoint+"/dir2/dir4", 0700)
+	t.Assert(err, IsNil)
+	err = os.MkdirAll(mountPoint+"/dir2/dir5", 0700)
+	t.Assert(err, IsNil)
+
+	/*
+	 *  //fh1, err := os.OpenFile(mountPoint+"/dir2", os.O_WRONLY, 0600)
+	 *  fh1, err := os.Open(mountPoint + "/dir2")
+	 *  t.Assert(err, IsNil)
+	 *  defer func() {
+	 *    // close the file if the test failed so we can unmount
+	 *    if fh1 != nil {
+	 *      fh1.Close()
+	 *    }
+	 *  }()
+	 *
+	 *  names, err := fh1.Readdirnames(0)
+	 *  t.Assert(err, IsNil)
+	 *  //t.Assert(names, DeepEquals, []string{"dir4"})
+	 *  t.Assert(names, DeepEquals, []string{"dir4", "dir5"})
+	 */
+	//1, open dir5
+	dir := mountPoint + "/dir2/dir5"
+	//fh, err := os.OpenFile(dir)
+	//fh, err := os.OpenFile(dir, os.O_WRONLY, 0600)
+	fh, err := os.Open(dir)
+	t.Assert(err, IsNil)
+	/*
+	 *defer func() {
+	 *  // close the file if the test failed so we can unmount
+	 *  if fh != nil {
+	 *    fh.Close()
+	 *  }
+	 *}()
+	 */
+
+	cmd1 := exec.Command("ls", mountPoint+"/dir2")
+	//out, err := cmd.Output()
+	out1, err1 := cmd1.Output()
+	if err1 != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			panic(ee.Stderr)
+		}
+	}
+	t.Assert(string(out1), DeepEquals, ""+"dir3\n"+"dir4\n"+"dir5\n")
+
+	//2, rm -rf dir5
+	/*
+	 *err = os.RemoveAll(dir)
+	 *t.Assert(err, IsNil)
+	 */
+	/*
+	 *  err = os.Remove(dir)
+	 *  t.Assert(err, IsNil)
+	 *
+	 *  fileinfo, err := os.Stat(mountPoint + "dir/")
+	 *  t.Assert(err, IsNil)
+	 */
+
+	//	fh1, err := os.OpenFile(mountPoint+"/dir2/", os.O_RDONLY|os.O_NONBLOCK|os.O_DIRECTORY|os.O_CLOEXEC, 0600)
+	cmd := exec.Command("rm", "-rf", dir)
+	//out, err := cmd.Output()
+	_, err = cmd.Output()
+	/*
+	 *if err != nil {
+	 *	t.Errorf("rm -rf : %v", err)
+	 *}
+	 */
+	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			panic(ee.Stderr)
+		}
+	}
+	/*
+	 *if g, e := string(out), "foo\n"; g != e {
+	 *	t.Errorf("echo: want %q, got %q", e, g)
+	 *}
+	 */
+
+	/*
+	 *err := cmd.Run()
+	 *t.Assert(err, IsNil)
+	 */
+
+	//3,  readdir dir2
+	fh1, err := os.Open(mountPoint + "/dir2")
+	t.Assert(err, IsNil)
+	defer func() {
+		// close the file if the test failed so we can unmount
+		if fh1 != nil {
+			fh1.Close()
+		}
+	}()
+
+	names, err := fh1.Readdirnames(0)
+	t.Assert(err, IsNil)
+	//t.Assert(names, DeepEquals, []string{"dir4"})
+	t.Assert(names, DeepEquals, []string{"dir3", "dir4"})
+
+	//namess, err := fh1.Readdir(0)
+	//t.Assert(err, IsNil)
+	////	t.Assert(names, DeepEquals, []string{"dir4"})
+	//t.Assert(namess, DeepEquals, "dir4")
+
+	cmd = exec.Command("ls", mountPoint+"/dir2")
+	//out, err := cmd.Output()
+	out, err := cmd.Output()
+	/*
+	 *if err != nil {
+	 *	t.Errorf("rm -rf : %v", err)
+	 *}
+	 */
+	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			panic(ee.Stderr)
+		}
+	}
+
+	/*
+	 *if g, e := string(out), "foo\n"; g != e {
+	 *  t.Errorf("echo: want %q, got %q", e, g)
+	 *}
+	 */
+	//t.Assert(out.([]string), DeepEquals, []string{"dir3", "dir4"})
+	//t.Assert(string(out), DeepEquals, []string{"dir3", "dir4"})
+	t.Assert(string(out), DeepEquals, ""+"dir3\n"+"dir4\n")
+
+	err = fh1.Close()
+	t.Assert(err, IsNil)
+
+	// 4,reset env
+	err = fh.Close()
+	t.Assert(err, IsNil)
+
+	err = os.RemoveAll(mountPoint + "/dir2/dir4")
+	t.Assert(err, IsNil)
+	/*
+	 *err = os.RemoveAll(mountPoint + "/dir2/dir5")
+	 *t.Assert(err, IsNil)
+	 */
+
+}
+func (s *GoofysTest) TestReadahead(t *C) {
+	root := s.getRoot(t)
+	//f := "file1"
+	s.testWriteFile(t, "testLargeFilea", 25*1024*1024, 128*1024)
+	f := "testLargeFilea"
+
+	in, err := root.LookUp(f)
+	t.Assert(err, IsNil)
+
+	fh, err := in.OpenFile()
+	t.Assert(err, IsNil)
+
+	//buf := make([]byte, 4096)
+	//buf := make([]byte, 10485759)
+	t.Log("start readfile")
+	// 80 10MB
+	//to i readfile161 to read second ahead
+	//for i := 0; i < 200; i++ {
+	for i := 0; i < 161; i++ {
+		buf := make([]byte, 131072)
+
+		t.Log("to i readfile", i)
+		nread, err := fh.ReadFile(int64(i*131072), buf)
+		t.Assert(err, IsNil)
+		//t.Assert(nread, Equals, len(f)-1)
+		//t.Assert(nread, Equals, 10485759)
+		t.Assert(nread, Equals, 131072)
+		//t.Assert(string(buf[0:nread]), DeepEquals, f[1:])
+	}
+	t.Log("end readfile")
+	/*
+	 *t.Log("start readfile readahead")
+	 *buf1 := make([]byte, 131072)
+	 *nread, err = fh.ReadFile(10485759, buf1)
+	 *t.Log("end readfile readahead")
+	 */
+
+	/*
+	 *  r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	 *
+	 *  for i := 0; i < 3; i++ {
+	 *    off := r.Int31n(int32(len(f)))
+	 *    nread, err = fh.ReadFile(int64(off), buf)
+	 *    t.Assert(err, IsNil)
+	 *    t.Assert(nread, Equals, len(f)-int(off))
+	 *    t.Assert(string(buf[0:nread]), DeepEquals, f[off:])
+	 *  }
+	 */
 }

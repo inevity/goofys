@@ -207,6 +207,6 @@ const logSignInfoMsg = `DEBUG: Request Signature:
 -----------------------------------------------------`
 
 func (v2 *signer) logSigningInfo() {
-	msg := fmt.Sprintf(logSignInfoMsg, v2.stringToSign, v2.Request.Header.Get("Authorization"))
+	msg := fmt.Sprintf(logSignInfoMsg, v2.stringToSign, v2.Request.Header.Get("Authorization"), v2.Time.String())
 	v2.Logger.Log(msg)
 }

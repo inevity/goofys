@@ -22,6 +22,7 @@ import (
 
 	"github.com/jacobsa/fuse"
 	"github.com/shirou/gopsutil/mem"
+	"github.com/sirupsen/logrus"
 )
 
 type BufferPool struct {
@@ -163,6 +164,7 @@ type MBuf struct {
 }
 
 func (mb MBuf) Init(h *BufferPool, size uint64, block bool) *MBuf {
+	mbufLog.Level = logrus.DebugLevel
 	mb.pool = h
 
 	if size != 0 {
@@ -171,6 +173,7 @@ func (mb MBuf) Init(h *BufferPool, size uint64, block bool) *MBuf {
 			return nil
 		}
 	}
+	mbufLog.Debugf("mbuf init size:pages%v , %v", size, len(mb.buffers))
 
 	return &mb
 }
@@ -261,21 +264,33 @@ func (mb *MBuf) Write(p []byte) (n int, err error) {
 }
 
 func (mb *MBuf) WriteFrom(r io.Reader) (n int, err error) {
+	//mbufLog.Debugf("mb: %v", mb)
 	b := mb.buffers[mb.wbuf]
 
-	if mb.wp == cap(b) {
+	if mb.wp == cap(b) { // if wp point the end of b,b not nessially 8MB cap vs len. ,
+		// move to next buf,till bufs have finished
+		// mb.buffers??
+		//	mbufLog.Debugf("mb.wp == cap(b)", cap(b))
 		if mb.wbuf+1 == len(mb.buffers) {
 			return
 		}
 		mb.wbuf++
-		b = mb.buffers[mb.wbuf]
+		b = mb.buffers[mb.wbuf] // 8MB
 		mb.wp = 0
 	} else if mb.wp > cap(b) {
 		panic("mb.wp > cap(b)")
 	}
+	mbufLog.Debugf("mb.wp:cap(b):mb.wbuf %v , %v, %v ", mb.wp, cap(b), mb.wbuf)
 
 	n, err = r.Read(b[mb.wp:cap(b)])
+
+	//	p := make([]byte, 3786)
+	//	n, _ = r.Read(p)
+	//	mbufLog.Debugf("readed 3786 is : %v", p)
+
 	mb.wp += n
+	mbufLog.Debugf("mb.wp:cap(b):mb.wbuf:havewritefromresponse %v , %v, %v ", mb.wp, cap(b), mb.wbuf, n)
+	//mbufLog.Debugf("mb.wp + n have write to buff from reader: %v", n)
 	// resize the buffer to account for what we just read
 	mb.buffers[mb.wbuf] = mb.buffers[mb.wbuf][:mb.wp]
 
@@ -304,8 +319,11 @@ type Buffer struct {
 type ReaderProvider func() (io.ReadCloser, error)
 
 func (b Buffer) Init(buf *MBuf, r ReaderProvider) *Buffer {
+	bufferLog.Level = logrus.DebugLevel
 	b.buf = buf
 	b.cond = sync.NewCond(&b.mu)
+	//bufferLog.Debugf("buffer init,reader %v, mbuf len %v", r, len(buf.buffers))
+	//bufferLog.Debugf("buffer init address %v", &b)
 
 	go func() {
 		b.readLoop(r)
@@ -318,6 +336,7 @@ func (b *Buffer) readLoop(r ReaderProvider) {
 	for {
 		b.mu.Lock()
 		if b.reader == nil {
+			bufferLog.Debugf("create reader and broadcast %v", &b)
 			b.reader, b.err = r()
 			b.cond.Broadcast()
 			if b.err != nil {
@@ -326,21 +345,28 @@ func (b *Buffer) readLoop(r ReaderProvider) {
 			}
 		}
 
-		if b.buf == nil {
+		if b.buf == nil { // set by the read or other,loop check
+			bufferLog.Debugf("buffer was drained,need break readloop %v", &b)
 			// buffer was drained
 			b.mu.Unlock()
 			break
 		}
 
+		bufferLog.Debugf("to write buf from reader to buf %v", &b)
 		nread, err := b.buf.WriteFrom(b.reader)
+		//b.reader is b.reader is the response from s3!!!,not the readerprovider
+		//    Body io.ReadCloser `type:"blob"`
+
 		if err != nil {
+			bufferLog.Debugf("err write buf from reader to buf %v", &b)
 			b.err = err
 			b.mu.Unlock()
 			break
 		}
-		bufferLog.Debugf("wrote %v into buffer", nread)
+		bufferLog.Debugf("wrote %v into buffer %v", nread, &b)
 
 		if nread == 0 {
+			bufferLog.Debugf("have write buf len 0 from write ,need close reader and exit loop %v", &b)
 			b.reader.Close()
 			b.mu.Unlock()
 			break
@@ -351,27 +377,34 @@ func (b *Buffer) readLoop(r ReaderProvider) {
 		// to allow another one to read
 		runtime.Gosched()
 	}
-	bufferLog.Debugf("<-- readLoop()")
+	bufferLog.Debugf("<-- readLoop() %v", &b)
 }
 
 func (b *Buffer) readFromStream(p []byte) (n int, err error) {
+	//bufferLog.Debugf("reading %v from stream %v", len(p), &b)
 	bufferLog.Debugf("reading %v from stream", len(p))
 
 	n, err = b.reader.Read(p)
+	//b.reader is s3 response
 	if n != 0 && err == io.ErrUnexpectedEOF {
+		bufferLog.Debugf("err ErrUnexpectedEOF have read %v from stream", n)
 		err = nil
 	} else {
-		bufferLog.Debugf("read %v from stream", n)
+		bufferLog.Debugf("have read %v from stream", n)
 	}
 	return
 }
 
 func (b *Buffer) Read(p []byte) (n int, err error) {
+	//bufferLog.Debugf("Buffer.Read(%v),%v", len(p), &b)
 	bufferLog.Debugf("Buffer.Read(%v)", len(p))
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	// if b.err = permission denid ,how ?
+	// when b.err = 13, b.reader != nil,so not wait.
+	// lookat proxybackend
 	for b.reader == nil && b.err == nil {
 		bufferLog.Debugf("waiting for stream")
 		b.cond.Wait()
