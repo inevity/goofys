@@ -39,6 +39,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/corehandlers"
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 
@@ -187,11 +188,42 @@ func (s *GoofysTest) SetUpSuite(t *C) {
 }
 
 func (s *GoofysTest) deleteBucket(t *C) {
-	resp, err := s.s3.ListObjects(&s3.ListObjectsInput{Bucket: &s.fs.bucket})
+	var resp *s3.ListObjectsOutput
+	var err error
+	var req *request.Request
+	if hasEnv("DnionS3") {
+		//resp, err = s.s3.ListObjects(&s3.ListObjectsInput{Bucket: &s.fs.bucket, Delimiter: aws.String("/")})
+		//resp, err = s.s3.ListObjects(&s3.ListObjectsInput{Bucket: &s.fs.bucket})
+		req, resp = s.s3.ListObjectsRequest(&s3.ListObjectsInput{Bucket: &s.fs.bucket})
+		//req.HTTPRequest.Header.Del("user-agent")
+		//fmt.Println(req.HTTPRequest.Header.Get("user-agent"))
+		t.Log("user-agent %v", req.HTTPRequest.Header.Get("User-Agent"))
+		t.Log("auth %v", req.HTTPRequest.Header.Get("Authorization"))
+		//have not add header!!!!,in send.   handlers.run
+		//		t.Log(req.Handlers)
+		//		//req.HTTPRequest.Header.Del("User-Agent", "foo/bar")
+		//		req.HTTPRequest.Header.Del("User-Agent")
+		//		if err := req.Build(); err != nil {
+		//			t.Log("expect no error, got %v", err)
+		//		}
+		//s.s3.Handlers.Sign.PushBack(Removeagent)
+		pushBackagentHandler("removeagent", &req.Handlers.Sign)
+		//not remove,who chang to     ["user-agent"] = "Go-http-client/1.1",
+		//from awk-sdk-go
+		err = req.Send()
+		/*
+		 *if err == nil { // resp is now filled
+		 *  fmt.Println(resp)
+		 *}
+		 */
+	} else {
+		resp, err = s.s3.ListObjects(&s3.ListObjectsInput{Bucket: &s.fs.bucket})
+	}
+	// goofys prefix is "",we should not process it , where
 	t.Assert(err, IsNil)
 
 	num_objs := len(resp.Contents)
-	t.Log("num_object to delete %v", num_objs)
+	t.Log("num_object to delete %v %v", num_objs, resp.Contents)
 
 	var items s3.Delete
 	var objs = make([]*s3.ObjectIdentifier, num_objs)
@@ -204,10 +236,13 @@ func (s *GoofysTest) deleteBucket(t *C) {
 	// Add list of objects to delete to Delete object
 	items.SetObjects(objs)
 
-	_, err = s.s3.DeleteObjects(&s3.DeleteObjectsInput{Bucket: &s.fs.bucket, Delete: &items})
-	t.Assert(err, IsNil)
+	if !hasEnv("DnionS3") {
+		_, err = s.s3.DeleteObjects(&s3.DeleteObjectsInput{Bucket: &s.fs.bucket, Delete: &items})
+		t.Assert(err, IsNil)
+	}
 
 	s.s3.DeleteBucket(&s3.DeleteBucketInput{Bucket: &s.fs.bucket})
+	// not check object exist
 }
 
 func (s *GoofysTest) TearDownSuite(t *C) {
@@ -251,6 +286,7 @@ func (s *GoofysTest) setupEnv(t *C, bucket string, env map[string]io.ReadSeeker,
 
 	t.Log("\n double check")
 	// double check
+	//exclud dnions3 and minio
 	for path := range env {
 		params := &s3.HeadObjectInput{Bucket: &bucket, Key: &path}
 		t.Log(path)
@@ -263,13 +299,13 @@ func (s *GoofysTest) setupEnv(t *C, bucket string, env map[string]io.ReadSeeker,
 
 func (s *GoofysTest) setupDefaultEnv(t *C, public bool) (bucket string) {
 	s.env = map[string]io.ReadSeeker{
-		"file1": nil,
-		"file2": nil,
-		//	"dir1/file3": nil,//we cannot create use the bash shell,but we can use the s3api
+		"file1":      nil,
+		"file2":      nil,
+		"dir1/file3": nil, //we cannot create use the bash shell,but we can use the s3api
 		//but now we dnions3 not impl,minion and java s3 have impl
 		//if impl ,we can s3 commtion with goofys shell.
 
-		//	"dir2/dir3/":      nil,
+		//"dir2/dir3/": nil, // add ,dnionss3 put,but cannot list,head. need to change
 		//	"dir2/dir3/file4": nil,
 		//	"dir4/":           nil,
 		//		"dir4/file5": nil,
@@ -281,6 +317,24 @@ func (s *GoofysTest) setupDefaultEnv(t *C, public bool) (bucket string) {
 	bucket = "goofys-test-" + RandStringBytesMaskImprSrc(16)
 	s.setupEnv(t, bucket, s.env, public)
 	return bucket
+}
+func Removeagent(req *request.Request) {
+	req.HTTPRequest.Header.Del("User-Agent")
+}
+
+//func pushBackagentHandler(name string, list *request.HandlerList) *bool {
+func pushBackagentHandler(name string, list *request.HandlerList) {
+	//	called := false
+	(*list).PushBackNamed(request.NamedHandler{
+		Name: name,
+		Fn: func(r *request.Request) {
+			//	called = true
+			r.HTTPRequest.Header.Del("User-Agent")
+		},
+	})
+
+	//	return &called
+	//return true
 }
 
 func (s *GoofysTest) SetUpTest(t *C) {
