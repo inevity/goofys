@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"io"
 	"sync"
+	"syscall"
 	"time"
 
 	"fmt"
@@ -132,6 +133,33 @@ func CompareReader(r1, r2 io.Reader) (int, error) {
 		fmt.Printf("EOF or normal have read end r2 but more bytes whether err or nil nread2:err%v %v\n", nread2, err)
 		return nread2, err
 	}
+}
+func Readerwitherror(r1 io.Reader) (int, error) {
+	var buf1 [1337]byte
+
+	//	for {
+	//call fh.ReadFile,from readahead cache or backend
+	r1.(*Buffer).reader = nil
+	r1.(*Buffer).err = syscall.Errno(0xd)
+	nread, err := r1.Read(buf1[:])
+	if err != nil && err != io.EOF {
+		//	t.Log("r1.Read err != EOF and != nil,return -1", err)
+		fmt.Printf("%vr1.Read err != EOF and != nil,return -1\n", err)
+
+		return -1, err
+	}
+	//ok or err== io.EOF
+	//if err = nil ,then continue
+	//if nread == 0 && err == io.EOF {
+	if nread == 0 {
+		fmt.Printf("r1.Read nread = 0,break loop %v\n", err)
+		//		break
+		//return nread, err
+	}
+
+	//	}
+
+	return nread, err
 }
 
 func (s *BufferTest) TestMBuf(t *C) {
@@ -260,4 +288,30 @@ func (s *BufferTest) TestIssue193(t *C) {
 	b.Close()
 
 	// readloop would have caused a panic
+}
+func (s *BufferTest) TestBufferwitherro(t *C) {
+	h := NewBufferPool(1000 * 1024 * 1024)
+
+	n := uint64(2 * BUF_SIZE)
+	mb := MBuf{}.Init(h, n, false)
+	t.Assert(len(mb.buffers), Equals, 2)
+
+	r := func() (io.ReadCloser, error) {
+		return &SlowReader{io.LimitReader(&SeqReader{}, int64(n)), 1 * time.Millisecond}, nil
+	}
+
+	b := Buffer{}.Init(mb, r)
+
+	//	diff, err := CompareReader(b, io.LimitReader(&SeqReader{}, int64(n)))
+	nread, err := Readerwitherror(b)
+	//	t.Assert(err, IsNil)
+	t.Assert(err, Equals, syscall.Errno(0xd))
+	t.Assert(nread, Equals, -1)
+
+	/*
+	 *t.Assert(diff, Equals, -1)
+	 *t.Assert(b.buf, IsNil)
+	 *t.Assert(b.reader, NotNil)
+	 *t.Assert(h.numBuffers, Equals, uint64(0))
+	 */
 }
