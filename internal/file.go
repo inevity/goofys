@@ -299,6 +299,7 @@ func (b S3ReadBuffer) Init(fh *FileHandle, offset uint64, size uint32) *S3ReadBu
 
 			//req.Time.Add(-1200)
 			req.Time = req.Time.AddDate(-1, 2, 3)
+			// or sleep
 			//fh.inode.logFuse("req time 20971520", req.Time.String())
 
 		}
@@ -511,7 +512,7 @@ func (fh *FileHandle) readFile(offset int64, buf []byte) (bytesRead int, err err
 		err = fh.readAhead(uint64(offset), len(buf))
 		if err == nil {
 			bytesRead, err = fh.readFromReadAhead(uint64(offset), buf)
-			fh.inode.logFuse("have readahead off,havered %v %v", offset, bytesRead)
+			fh.inode.logFuse("have readahead offset,havered,err %v %v", offset, bytesRead, err)
 			return
 		} else {
 			// fall back to read serially

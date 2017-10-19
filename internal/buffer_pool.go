@@ -338,9 +338,11 @@ func (b *Buffer) readLoop(r ReaderProvider) {
 		if b.reader == nil {
 			bufferLog.Debugf("create reader and broadcast %v", &b)
 			b.reader, b.err = r()
+			//if err != nil, then b.reader= nil !!!!
 			b.cond.Broadcast()
 			if b.err != nil {
 				b.mu.Unlock()
+				// maybe we should nil buf ?
 				break
 			}
 		}
@@ -397,7 +399,7 @@ func (b *Buffer) readFromStream(p []byte) (n int, err error) {
 
 func (b *Buffer) Read(p []byte) (n int, err error) {
 	//bufferLog.Debugf("Buffer.Read(%v),%v", len(p), &b)
-	bufferLog.Debugf("Buffer.Read(%v)", len(p))
+	bufferLog.Debugf("one Buffer.Read(%v)", len(p))
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -414,7 +416,17 @@ func (b *Buffer) Read(p []byte) (n int, err error) {
 		}
 	}
 
-	if b.buf != nil {
+	bufferLog.Debugf("buffer Read wait for b.err %v", b.err)
+
+	//first check err ,if err,omit following
+
+	// eveary read return EOF
+	if b.err != nil && b.err != io.EOF {
+		//bufferLog.Debugf("buffer Read wait for b.err %v", b.err)
+		err = b.err
+
+	} else if b.buf != nil {
+		//if b.buf != nil {
 		bufferLog.Debugf("reading %v from buffer", len(p))
 
 		n, err = b.buf.Read(p)
@@ -426,8 +438,12 @@ func (b *Buffer) Read(p []byte) (n int, err error) {
 		} else {
 			bufferLog.Debugf("read %v from buffer", n)
 		}
-	} else if b.err != nil {
-		err = b.err
+
+		/*
+		 *  } else if b.err != nil {
+		 *    err = b.err
+		 *
+		 */
 	} else {
 		n, err = b.readFromStream(p)
 	}

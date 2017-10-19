@@ -191,16 +191,19 @@ func (s *GoofysTest) deleteBucket(t *C) {
 	t.Assert(err, IsNil)
 
 	num_objs := len(resp.Contents)
+	t.Log("num_object to delete %v", num_objs)
 
 	var items s3.Delete
 	var objs = make([]*s3.ObjectIdentifier, num_objs)
 
 	for i, o := range resp.Contents {
 		objs[i] = &s3.ObjectIdentifier{Key: aws.String(*o.Key)}
+		t.Log("num_object to delete is %v", *o.Key)
 	}
 
 	// Add list of objects to delete to Delete object
 	items.SetObjects(objs)
+
 	_, err = s.s3.DeleteObjects(&s3.DeleteObjectsInput{Bucket: &s.fs.bucket, Delete: &items})
 	t.Assert(err, IsNil)
 
@@ -208,7 +211,7 @@ func (s *GoofysTest) deleteBucket(t *C) {
 }
 
 func (s *GoofysTest) TearDownSuite(t *C) {
-	//	s.deleteBucket(t)
+	s.deleteBucket(t)
 }
 
 func (s *GoofysTest) setupEnv(t *C, bucket string, env map[string]io.ReadSeeker, public bool) {
@@ -2157,13 +2160,21 @@ func (s *GoofysTest) TestReadahead(t *C) {
 	for i := 0; i < 161; i++ {
 		buf := make([]byte, 131072)
 
-		t.Log("to i readfile", i)
+		t.Log("to i readfile", i, len(buf))
 		nread, err := fh.ReadFile(int64(i*131072), buf)
-		t.Assert(err, IsNil)
-		//t.Assert(nread, Equals, len(f)-1)
-		//t.Assert(nread, Equals, 10485759)
-		t.Assert(nread, Equals, 131072)
-		//t.Assert(string(buf[0:nread]), DeepEquals, f[1:])
+		if i == 160 {
+			//t.Assert(err, Equals, errors.New("EOF"))
+			t.Assert(err, Equals, syscall.Errno(0xd))
+
+			//t.Assert(nread, Equals, len(f)-1)
+			//t.Assert(nread, Equals, 10485759)
+			t.Assert(nread, Equals, 0)
+			//t.Assert(string(buf[0:nread]), DeepEquals, f[1:])
+
+		} else {
+			t.Assert(err, IsNil)
+			t.Assert(nread, Equals, 131072)
+		}
 	}
 	t.Log("end readfile")
 	/*

@@ -20,6 +20,8 @@ import (
 	"sync"
 	"time"
 
+	"fmt"
+
 	"github.com/sirupsen/logrus"
 	. "gopkg.in/check.v1"
 )
@@ -80,17 +82,27 @@ func CompareReader(r1, r2 io.Reader) (int, error) {
 	var buf2 [1337]byte
 
 	for {
+		//call fh.ReadFile,from readahead cache or backend
 		nread, err := r1.Read(buf1[:])
 		if err != nil && err != io.EOF {
+			//	t.Log("r1.Read err != EOF and != nil,return -1", err)
+			fmt.Printf("%vr1.Read err != EOF and != nil,return -1\n", err)
+
 			return -1, err
 		}
-
+		//ok or err== io.EOF
+		//if err = nil ,then continue
+		//if nread == 0 && err == io.EOF {
 		if nread == 0 {
+			fmt.Printf("r1.Read nread = 0,break loop %v\n", err)
 			break
 		}
 
+		//from r2 to buf2 len nread!!!
+		//only write r2.curr to buf2!!!,then return the read.
 		nread2, err := io.ReadFull(r2, buf2[:nread])
 		if err != nil {
+			fmt.Printf("r2  Read err !=nil ,brak loop return -1\n", err)
 			return -1, err
 		}
 
@@ -98,11 +110,13 @@ func CompareReader(r1, r2 io.Reader) (int, error) {
 			// fallback to slow path to find the exact point of divergent
 			for i, b := range buf1 {
 				if buf2[i] != b {
+					fmt.Printf("r2 diff r1  Read on index %v \n", i)
 					return i, nil
 				}
 			}
 
 			if nread2 > nread {
+				fmt.Printf("r2 bigger r1  Read on index %v %v\n", nread, nread2)
 				return nread, nil
 			}
 		}
@@ -111,8 +125,11 @@ func CompareReader(r1, r2 io.Reader) (int, error) {
 	// should have consumed all of r2
 	nread2, err := r2.Read(buf2[:])
 	if nread2 == 0 || err == io.ErrUnexpectedEOF {
+
+		fmt.Printf("EOF or normal have read end r2 as r1 or ErrUnexpectedEOF\n")
 		return -1, nil
 	} else {
+		fmt.Printf("EOF or normal have read end r2 but more bytes whether err or nil nread2:err%v %v\n", nread2, err)
 		return nread2, err
 	}
 }
