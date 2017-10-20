@@ -172,8 +172,8 @@ func (mb MBuf) Init(h *BufferPool, size uint64, block bool) *MBuf {
 		if mb.buffers == nil {
 			return nil
 		}
+		mbufLog.Debugf("mbuf init size:pages%v , %v", size, len(mb.buffers))
 	}
-	mbufLog.Debugf("mbuf init size:pages%v , %v", size, len(mb.buffers))
 
 	return &mb
 }
