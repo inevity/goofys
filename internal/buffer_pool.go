@@ -421,12 +421,14 @@ func (b *Buffer) Read(p []byte) (n int, err error) {
 	//first check err ,if err,omit following
 
 	// eveary read return EOF
-	if b.err != nil && b.err != io.EOF {
-		//bufferLog.Debugf("buffer Read wait for b.err %v", b.err)
-		err = b.err
-
-	} else if b.buf != nil {
-		//if b.buf != nil {
+	/*
+	 *  if b.err != nil && b.err != io.EOF {
+	 *    //bufferLog.Debugf("buffer Read wait for b.err %v", b.err)
+	 *    err = b.err
+	 *
+	 *  } else if b.buf != nil {
+	 */
+	if b.buf != nil {
 		bufferLog.Debugf("reading %v from buffer", len(p))
 
 		n, err = b.buf.Read(p)
@@ -439,11 +441,9 @@ func (b *Buffer) Read(p []byte) (n int, err error) {
 			bufferLog.Debugf("read %v from buffer", n)
 		}
 
-		/*
-		 *  } else if b.err != nil {
-		 *    err = b.err
-		 *
-		 */
+	} else if b.err != nil {
+		err = b.err
+
 	} else {
 		n, err = b.readFromStream(p)
 	}
