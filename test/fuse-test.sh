@@ -1,5 +1,5 @@
 #!/bin/bash
-
+set -x 
 set -o xtrace
 set -o errexit
 
@@ -164,9 +164,13 @@ function test_mv_directory {
        echo "Unexpected, this file/directory exists: ${TEST_DIR}"
        exit 1
     fi
+    
 
+    echo "run mk_test_dir"
     mk_test_dir
+    ls -lah $TEST_DIR
 
+    echo "run rename"
     mv ${TEST_DIR} ${TEST_DIR}_rename
 
     if [ ! -d "${TEST_DIR}_rename" ]; then
@@ -494,9 +498,18 @@ function test_rmdir_withfdopen {
     #ls -lha $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR
    # ls $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR
 
-    lsout=`ls $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR`
+    #lsout=`ls $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR`
+    lsout=`ls $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR|uniq -c|grep 2|wc -l`
 
-    echo "$lsout"
+    #if [[ `echo "$lsout"|uniq -c|grep 2|wc -l` gt 0 ]] ; then
+      #exit 1
+    #fi
+
+    if [[ "$lsout" != 0 ]] ; then
+      exit 1
+    fi
+
+    
 
         #    lslahout=`ls -lah $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR`
         #    
@@ -536,12 +549,16 @@ function test_write_after_seek_ahead {
 }
 
 function run_all_tests {
+    echo "to  test_append_file"
     test_append_file
     #test_truncate_file
     #test_truncate_empty_file
+    echo "to  test_mv_file"
     test_mv_file
+    echo "to  test_mv_directory"
     test_mv_directory
     #test_redirects
+    echo "to  test_mkdir_rmdir"
     test_mkdir_rmdir
     #test_chmod
     #test_chown
@@ -573,6 +590,7 @@ if [ "$TEST_BUCKET_MOUNT_POINT_1" == "" ]; then
 fi
 
 pushd $TEST_BUCKET_MOUNT_POINT_1
+echo "to mkdir test_dir"
 mkdir test_dir
 cd test_dir
 
@@ -580,10 +598,13 @@ if [ -e $TEST_TEXT_FILE ]
 then
   rm -f $TEST_TEXT_FILE
 fi
+echo "to run all test"
 
-run_all_tests
+#run_all_tests
+test_mv_directory
 
 # Unmount the bucket
 popd
 echo "All tests complete."
+mount
 exit 0

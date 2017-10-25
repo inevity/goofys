@@ -131,6 +131,7 @@ func (p sortedDirents) Less(i, j int) bool { return *p[i].Name < *p[j].Name }
 func (p sortedDirents) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 
 func (dh *DirHandle) listObjectsSlurp(prefix string) (resp *s3.ListObjectsOutput, err error) {
+	fuseLog.Debugf("to listobjecslurp")
 	var marker *string
 	reqPrefix := prefix
 	inode := dh.inode
@@ -246,6 +247,7 @@ func (dh *DirHandle) listObjects(prefix string) (resp *s3.ListObjectsOutput, err
 			Marker:    dh.Marker,
 			Prefix:    &prefix,
 		}
+		fuseLog.Debugf("%v %v listobjectpara", params, fs.s3)
 
 		resp, err := fs.s3.ListObjects(params)
 		if err != nil {
@@ -329,10 +331,13 @@ func (dh *DirHandle) ReadDir(offset fuseops.DirOffset) (en *DirHandleEntry, err 
 	 *}
 	 */
 
+	fuseLog.Debugf("to readdirfromcache ")
 	en, ok := dh.inode.readDirFromCache(offset)
 	if ok {
+		fuseLog.Debugf("have readdirfromcache ")
 		return
 	}
+	fuseLog.Debugf("readdirfromcache fail")
 
 	fs := dh.inode.fs
 
@@ -358,6 +363,7 @@ func (dh *DirHandle) ReadDir(offset fuseops.DirOffset) (en *DirHandleEntry, err 
 	if i < 0 {
 		panic(fmt.Sprintf("invalid offset %v, base=%v", offset, dh.BaseOffset))
 	}
+	fuseLog.Debugf("%v dh.Entries ", len(dh.Entries))
 
 	if i >= len(dh.Entries) {
 		if dh.Marker != nil {
@@ -377,6 +383,7 @@ func (dh *DirHandle) ReadDir(offset fuseops.DirOffset) (en *DirHandleEntry, err 
 			prefix += "/"
 		}
 
+		fuseLog.Debugf("to listobjects")
 		resp, err := dh.listObjects(prefix)
 		if err != nil {
 			dh.mu.Lock()

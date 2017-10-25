@@ -579,7 +579,7 @@ func convertMetadata(meta map[string][]byte) (metadata map[string]*string) {
 func (inode *Inode) updateXattr() (err error) {
 	err = copyObjectMaybeMultipart(inode.fs, int64(inode.Attributes.Size),
 		*inode.FullName(), *inode.FullName(),
-		aws.String(string(inode.s3Metadata["etag"])), convertMetadata(inode.userMetadata))
+		aws.String(string(inode.s3Metadata["etag"])), convertMetadata(inode.userMetadata), false)
 	return
 }
 
@@ -733,7 +733,9 @@ func (parent *Inode) Rename(from string, newParent *Inode, to string) (err error
 		size = 0
 	}
 
-	err = renameObject(fs, size, fromFullName, toFullName)
+	parent.logFuse("Renames before", err)
+	err = renameObject(fs, size, fromFullName, toFullName, fromIsDir)
+	parent.logFuse("Renames after ", err)
 	return
 }
 
@@ -869,19 +871,32 @@ func copyObjectMultipart(fs *Goofys, size int64, from string, to string, mpuId s
 	return
 }
 
-func copyObjectMaybeMultipart(fs *Goofys, size int64, from string, to string, srcEtag *string, metadata map[string]*string) (err error) {
+func copyObjectMaybeMultipart(fs *Goofys, size int64, from string, to string, srcEtag *string, metadata map[string]*string, fromIsDir bool) (err error) {
+	// for rename dir,size = 0,srcetag,metadata =nil ,we should head a/,but we have not impl a/,will panic.
+	//how we process? imple a/  or
+	// list a/ head a ,head a/.,object or dir ,how we diff,
+	// or unify process dir /file == object. should look at the list dir...
 
-	if size == -1 || srcEtag == nil || metadata == nil {
-		params := &s3.HeadObjectInput{Bucket: &fs.bucket, Key: fs.key(from)}
-		resp, err := fs.s3.HeadObject(params)
-		if err != nil {
-			return mapAwsError(err)
+	//check the is file or dir attre ,or for dir, list,not head.!!!
+	// if upgrade to this ,we will have many issuse.,cannot get dir metadata and etag...
+	//
+	if fromIsDir == false {
+		if size == -1 || srcEtag == nil || metadata == nil {
+			params := &s3.HeadObjectInput{Bucket: &fs.bucket, Key: fs.key(from)}
+			resp, err := fs.s3.HeadObject(params)
+			if err != nil {
+				s3Log.Debug("renames3 %v", err)
+				return mapAwsError(err)
+			}
+
+			size = *resp.ContentLength
+			metadata = resp.Metadata
+			srcEtag = resp.ETag
 		}
-
-		size = *resp.ContentLength
-		metadata = resp.Metadata
-		srcEtag = resp.ETag
 	}
+	// else {
+
+	// diretag/metadata got }
 
 	from = fs.bucket + "/" + *fs.key(from)
 
@@ -915,6 +930,7 @@ func copyObjectMaybeMultipart(fs *Goofys, size int64, from string, to string, sr
 	resp, err := fs.s3.CopyObject(params)
 	if err != nil {
 		s3Log.Errorf("CopyObject %v = %v", params, err)
+		s3Log.Debug("renames4 %v", err)
 		err = mapAwsError(err)
 	}
 	s3Log.Debug(resp)
@@ -922,9 +938,10 @@ func copyObjectMaybeMultipart(fs *Goofys, size int64, from string, to string, sr
 	return
 }
 
-func renameObject(fs *Goofys, size int64, fromFullName string, toFullName string) (err error) {
-	err = copyObjectMaybeMultipart(fs, size, fromFullName, toFullName, nil, nil)
+func renameObject(fs *Goofys, size int64, fromFullName string, toFullName string, fromIsDir bool) (err error) {
+	err = copyObjectMaybeMultipart(fs, size, fromFullName, toFullName, nil, nil, fromIsDir)
 	if err != nil {
+		s3Log.Debugf("rename1 %v", err)
 		return err
 	}
 
@@ -935,6 +952,7 @@ func renameObject(fs *Goofys, size int64, fromFullName string, toFullName string
 
 	_, err = fs.s3.DeleteObject(delParams)
 	if err != nil {
+		s3Log.Debugf("rename2 %v", err)
 		return mapAwsError(err)
 	}
 	s3Log.Debugf("Deleted %v", delParams)
@@ -1026,13 +1044,17 @@ func (parent *Inode) readDirFromCache(offset fuseops.DirOffset) (en *DirHandleEn
 	parent.mu.Lock()
 	defer parent.mu.Unlock()
 
+	s3Log.Debugf("parent.dir.DirTime, parent.fs.flags.TypeCacheTTL %v,%v", parent.dir.DirTime, parent.fs.flags.TypeCacheTTL)
 	if !expired(parent.dir.DirTime, parent.fs.flags.TypeCacheTTL) {
+		//	fuseLog.Debugln(op, parent.Id, *parent.FullName(), "read from cache ")
+		s3Log.Debugf("parent name readir from cache", *parent.FullName())
 		ok = true
 
 		if int(offset) >= len(parent.dir.Children) {
 			return
 		}
 		child := parent.dir.Children[offset]
+		s3Log.Debugf("parent name readir from cache ,childname", *parent.FullName(), *child.Name)
 
 		en = &DirHandleEntry{
 			Name:       child.Name,

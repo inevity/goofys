@@ -131,7 +131,8 @@ func NewGoofys(ctx context.Context, bucket string, awsConfig *aws.Config, flags 
 	}
 
 	if flags.DebugS3 {
-		awsConfig.LogLevel = aws.LogLevel(aws.LogDebug | aws.LogDebugWithRequestErrors | aws.LogDebugWithSigning)
+		//awsConfig.LogLevel = aws.LogLevel(aws.LogDebug | aws.LogDebugWithRequestErrors | aws.LogDebugWithSigning)
+		awsConfig.LogLevel = aws.LogLevel(aws.LogDebug | aws.LogDebugWithRequestErrors)
 		s3Log.Level = logrus.DebugLevel
 	}
 	if flags.DebugFuse {
@@ -1121,6 +1122,8 @@ func (fs *Goofys) Rename(
 			// because this is a new file and we haven't
 			// flushed it yet, pretend that's ok because
 			// when we flush we will handle the rename
+
+			s3Log.Debugf("renames %v ", err)
 			inode := parent.findChildUnlocked(op.OldName, false)
 			if inode.fileHandles != 0 {
 				err = nil

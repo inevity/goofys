@@ -315,12 +315,14 @@ func (s *GoofysTest) setupDefaultEnv(t *C, public bool) (bucket string) {
 			 *  //	"zero":            bytes.NewReader([]byte{}),
 			 *}
 	*/
+	t.Log("AWS:MINIO:DnionS3:ProxyS3", hasEnv("AWS"), hasEnv("MINIO"), hasEnv("DnionS3"))
 
 	if hasEnv("AWS") || hasEnv("MINIO") || hasEnv("DnionS3") {
 		s.env = map[string]io.ReadSeeker{
-			"file1":      nil,
-			"file2":      nil,
-			"dir1/file3": nil, //we cannot create use the bash shell,but we can use the s3api
+			"file1":           nil,
+			"file2":           nil,
+			"dir1/file3":      nil, //we cannot create use the bash shell,but we can use the s3api
+			"dir2/dir3/file4": nil,
 		}
 	} else {
 
@@ -491,13 +493,16 @@ func (s *GoofysTest) readDirFully(t *C, dh *DirHandle) (entries []DirHandleEntry
 	t.Assert(err, IsNil)
 	t.Assert(en, NotNil)
 	t.Assert(*en.Name, Equals, ".")
+	t.Log("readdirfully offset 0")
 
 	en, err = dh.ReadDir(fuseops.DirOffset(1))
 	t.Assert(err, IsNil)
 	t.Assert(en, NotNil)
 	t.Assert(*en.Name, Equals, "..")
+	t.Log("readdirfully offset 1")
 
 	for i := fuseops.DirOffset(2); ; i++ {
+		t.Log("to readdirfully offset 2+")
 		en, err = dh.ReadDir(i)
 		t.Assert(err, IsNil)
 
@@ -519,6 +524,7 @@ func namesOf(entries []DirHandleEntry) (names []string) {
 func (s *GoofysTest) assertEntries(t *C, in *Inode, names []string) {
 	dh := in.OpenDir()
 	defer dh.CloseDir()
+	t.Log("to readdirfully")
 
 	t.Assert(namesOf(s.readDirFully(t, dh)), DeepEquals, names)
 }
@@ -1119,6 +1125,7 @@ func (s *GoofysTest) umount(t *C, mountPoint string) {
 
 func (s *GoofysTest) runFuseTest(t *C, mountPoint string, umount bool, cmdArgs ...string) {
 	s.mount(t, mountPoint)
+	t.Log("fuse have mounted")
 
 	if umount {
 		defer s.umount(t, mountPoint)
@@ -1142,13 +1149,16 @@ func (s *GoofysTest) runFuseTest(t *C, mountPoint string, umount bool, cmdArgs .
 	cmd.Stdout = &outb
 	cmd.Stderr = &errb
 
+	t.Log("to goofys logging")
 	err := cmd.Run()
 	//	err := cmd.Run()
 	//      cmdOut, err := cmd.Output()
 	//fmt.Println(string(cmdOut))
 	//fmt.Println(string(cmdOut))
 	//      fmt.Println(w.String())
+	t.Log("to shell output logging")
 	fmt.Println(outb.String(), errb.String())
+	//	t.Log(outb.String()) good
 	//fmt.Println(errb.String())
 
 	t.Assert(err, IsNil)
@@ -1156,6 +1166,7 @@ func (s *GoofysTest) runFuseTest(t *C, mountPoint string, umount bool, cmdArgs .
 
 func (s *GoofysTest) TestFuseRaw(t *C) {
 	mountPoint := "/tmp/mnt" + s.fs.bucket
+	t.Log("to TestFuseRaw")
 
 	s.runFuseTest(t, mountPoint, true, "../test/fuse-test.sh", mountPoint)
 }
@@ -1881,10 +1892,13 @@ func (s *GoofysTest) TestReadDirSlurpSubtree(t *C) {
 
 	s.readDirIntoCache(t, in.Id)
 
+	t.Log("to lookup dir2/dir3")
 	in, err = s.LookUpInode(t, "dir2/dir3")
 	t.Assert(err, IsNil)
 
 	// reading dir2 should cause dir2/dir3 to have cached readdir
+	t.Log("to disable s3")
+	//time.Sleep(time.Second * )
 	s.disableS3()
 
 	s.assertEntries(t, in, []string{"file4"})

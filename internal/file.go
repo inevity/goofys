@@ -767,7 +767,7 @@ func (fh *FileHandle) FlushFile() (err error) {
 
 	if *fh.mpuKey != *fh.inode.FullName() {
 		// the file was renamed
-		err = renameObject(fs, fh.nextWriteOffset, *fh.mpuKey, *fh.inode.FullName())
+		err = renameObject(fs, fh.nextWriteOffset, *fh.mpuKey, *fh.inode.FullName(), false)
 	}
 
 	return
