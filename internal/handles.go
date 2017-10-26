@@ -871,7 +871,7 @@ func copyObjectMultipart(fs *Goofys, size int64, from string, to string, mpuId s
 	return
 }
 
-func copyObjectMaybeMultipart(fs *Goofys, size int64, from string, to string, srcEtag *string, metadata map[string]*string, fromIsDir bool) (err error) {
+func copyObjectMaybeMultipart(fs *Goofys, size int64, from string, to string, srcEtag *string, metadata map[string]*string) (err error) {
 	// for rename dir,size = 0,srcetag,metadata =nil ,we should head a/,but we have not impl a/,will panic.
 	//how we process? imple a/  or
 	// list a/ head a ,head a/.,object or dir ,how we diff,
