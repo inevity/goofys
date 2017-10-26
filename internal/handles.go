@@ -579,7 +579,7 @@ func convertMetadata(meta map[string][]byte) (metadata map[string]*string) {
 func (inode *Inode) updateXattr() (err error) {
 	err = copyObjectMaybeMultipart(inode.fs, int64(inode.Attributes.Size),
 		*inode.FullName(), *inode.FullName(),
-		aws.String(string(inode.s3Metadata["etag"])), convertMetadata(inode.userMetadata), false)
+		aws.String(string(inode.s3Metadata["etag"])), convertMetadata(inode.userMetadata))
 	return
 }
 
@@ -734,7 +734,7 @@ func (parent *Inode) Rename(from string, newParent *Inode, to string) (err error
 	}
 
 	parent.logFuse("Renames before", err)
-	err = renameObject(fs, size, fromFullName, toFullName, fromIsDir)
+	err = renameObject(fs, size, fromFullName, toFullName)
 	parent.logFuse("Renames after ", err)
 	return
 }
@@ -880,23 +880,37 @@ func copyObjectMaybeMultipart(fs *Goofys, size int64, from string, to string, sr
 	//check the is file or dir attre ,or for dir, list,not head.!!!
 	// if upgrade to this ,we will have many issuse.,cannot get dir metadata and etag...
 	//
-	if fromIsDir == false {
-		if size == -1 || srcEtag == nil || metadata == nil {
-			params := &s3.HeadObjectInput{Bucket: &fs.bucket, Key: fs.key(from)}
-			resp, err := fs.s3.HeadObject(params)
-			if err != nil {
-				s3Log.Debug("renames3 %v", err)
-				return mapAwsError(err)
-			}
-
-			size = *resp.ContentLength
-			metadata = resp.Metadata
-			srcEtag = resp.ETag
+	/*
+	 *    if fromIsDir == false {
+	 *        if size == -1 || srcEtag == nil || metadata == nil {
+	 *            params := &s3.HeadObjectInput{Bucket: &fs.bucket, Key: fs.key(from)}
+	 *            resp, err := fs.s3.HeadObject(params)
+	 *            if err != nil {
+	 *                s3Log.Debug("renames3 %v", err)
+	 *                return mapAwsError(err)
+	 *            }
+	 *
+	 *            size = *resp.ContentLength
+	 *            metadata = resp.Metadata
+	 *            srcEtag = resp.ETag
+	 *        }
+	 *    }
+	 *    // else {
+	 *
+	 *    // diretag/metadata got }
+	 */
+	if size == -1 || srcEtag == nil || metadata == nil {
+		params := &s3.HeadObjectInput{Bucket: &fs.bucket, Key: fs.key(from)}
+		resp, err := fs.s3.HeadObject(params)
+		if err != nil {
+			s3Log.Debug("renames3 %v", err)
+			return mapAwsError(err)
 		}
-	}
-	// else {
 
-	// diretag/metadata got }
+		size = *resp.ContentLength
+		metadata = resp.Metadata
+		srcEtag = resp.ETag
+	}
 
 	from = fs.bucket + "/" + *fs.key(from)
 
@@ -938,8 +952,8 @@ func copyObjectMaybeMultipart(fs *Goofys, size int64, from string, to string, sr
 	return
 }
 
-func renameObject(fs *Goofys, size int64, fromFullName string, toFullName string, fromIsDir bool) (err error) {
-	err = copyObjectMaybeMultipart(fs, size, fromFullName, toFullName, nil, nil, fromIsDir)
+func renameObject(fs *Goofys, size int64, fromFullName string, toFullName string) (err error) {
+	err = copyObjectMaybeMultipart(fs, size, fromFullName, toFullName, nil, nil)
 	if err != nil {
 		s3Log.Debugf("rename1 %v", err)
 		return err
