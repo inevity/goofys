@@ -2088,6 +2088,11 @@ func (s *GoofysTest) TestRead403(t *C) {
 
 	_, err = fh.ReadFile(0, buf)
 	t.Assert(err, Equals, syscall.EACCES)
+
+	// now that the S3 GET has failed, try again, see
+	// https://github.com/kahing/goofys/pull/243
+	_, err = fh.ReadFile(0, buf)
+	t.Assert(err, Equals, syscall.EACCES)
 }
 
 func (s *GoofysTest) TestRmdirWithDiropen(t *C) {
@@ -2239,60 +2244,63 @@ func (s *GoofysTest) TestRmdirWithDiropen(t *C) {
 }
 
 func (s *GoofysTest) TestReadahead(t *C) {
-	root := s.getRoot(t)
-	//f := "file1"
-	s.testWriteFile(t, "testLargeFilea", 25*1024*1024, 128*1024)
-	f := "testLargeFilea"
+	if hasEnv("AWS") || hasEnv("MINIO") || hasEnv("DnionS3") {
+		root := s.getRoot(t)
+		//f := "file1"
+		s.testWriteFile(t, "testLargeFilea", 25*1024*1024, 128*1024)
+		f := "testLargeFilea"
 
-	in, err := root.LookUp(f)
-	t.Assert(err, IsNil)
+		in, err := root.LookUp(f)
+		t.Assert(err, IsNil)
 
-	fh, err := in.OpenFile()
-	t.Assert(err, IsNil)
+		fh, err := in.OpenFile()
+		t.Assert(err, IsNil)
 
-	//buf := make([]byte, 4096)
-	//buf := make([]byte, 10485759)
-	t.Log("start readfile")
-	// 80 10MB
-	//to i readfile161 to read second ahead
-	//for i := 0; i < 200; i++ {
-	for i := 0; i < 161; i++ {
-		buf := make([]byte, 131072)
+		//buf := make([]byte, 4096)
+		//buf := make([]byte, 10485759)
+		t.Log("start readfile")
+		// 80 10MB
+		//to i readfile161 to read second ahead
+		//for i := 0; i < 200; i++ {
+		for i := 0; i < 161; i++ {
+			buf := make([]byte, 131072)
 
-		t.Log("to i readfile", i, len(buf))
-		nread, err := fh.ReadFile(int64(i*131072), buf)
-		if i == 160 {
-			//t.Assert(err, Equals, errors.New("EOF"))
-			t.Assert(err, Equals, syscall.Errno(0xd))
-			//now java proxy s3 not impl timeskew,only minio and dnions3
+			t.Log("to i readfile", i, len(buf))
+			nread, err := fh.ReadFile(int64(i*131072), buf)
+			if i == 160 {
+				//t.Assert(err, Equals, errors.New("EOF"))
+				t.Assert(err, Equals, syscall.Errno(0xd))
+				//now java proxy s3 not impl timeskew,only minio and dnions3
 
-			//t.Assert(nread, Equals, len(f)-1)
-			//t.Assert(nread, Equals, 10485759)
-			t.Assert(nread, Equals, 0)
-			//t.Assert(string(buf[0:nread]), DeepEquals, f[1:])
+				//t.Assert(nread, Equals, len(f)-1)
+				//t.Assert(nread, Equals, 10485759)
+				t.Assert(nread, Equals, 0)
+				//t.Assert(string(buf[0:nread]), DeepEquals, f[1:])
 
-		} else {
-			t.Assert(err, IsNil)
-			t.Assert(nread, Equals, 131072)
+			} else {
+				t.Assert(err, IsNil)
+				t.Assert(nread, Equals, 131072)
+			}
 		}
-	}
-	t.Log("end readfile")
-	/*
-	 *t.Log("start readfile readahead")
-	 *buf1 := make([]byte, 131072)
-	 *nread, err = fh.ReadFile(10485759, buf1)
-	 *t.Log("end readfile readahead")
-	 */
+		t.Log("end readfile")
+		/*
+		 *t.Log("start readfile readahead")
+		 *buf1 := make([]byte, 131072)
+		 *nread, err = fh.ReadFile(10485759, buf1)
+		 *t.Log("end readfile readahead")
+		 */
 
-	/*
-	 *  r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	 *
-	 *  for i := 0; i < 3; i++ {
-	 *    off := r.Int31n(int32(len(f)))
-	 *    nread, err = fh.ReadFile(int64(off), buf)
-	 *    t.Assert(err, IsNil)
-	 *    t.Assert(nread, Equals, len(f)-int(off))
-	 *    t.Assert(string(buf[0:nread]), DeepEquals, f[off:])
-	 *  }
-	 */
+		/*
+		 *  r := rand.New(rand.NewSource(time.Now().UnixNano()))
+		 *
+		 *  for i := 0; i < 3; i++ {
+		 *    off := r.Int31n(int32(len(f)))
+		 *    nread, err = fh.ReadFile(int64(off), buf)
+		 *    t.Assert(err, IsNil)
+		 *    t.Assert(nread, Equals, len(f)-int(off))
+		 *    t.Assert(string(buf[0:nread]), DeepEquals, f[off:])
+		 *  }
+		 */
+
+	}
 }

@@ -337,9 +337,17 @@ func (b *S3ReadBuffer) Read(offset uint64, p []byte) (n int, err error) {
 			if uint32(n) > b.size {
 				panic(fmt.Sprintf("read more than available %v %v", n, b.size))
 			}
+			//note: we in ReadFile process io.EOF ,not there,only the io.ErrUnexpectedEOF
+			// process here ,why?
+			//if err == io.EOF
+
+			//	if err == nil {
 
 			b.offset += uint64(n)
 			b.size -= uint32(n)
+
+			//	}
+
 		}
 
 		return

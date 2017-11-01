@@ -418,6 +418,20 @@ func (b *Buffer) Read(p []byte) (n int, err error) {
 
 	bufferLog.Debugf("buffer Read wait for b.err %v", b.err)
 
+	// we could have received the err before Read was called
+	if b.reader == nil {
+		if b.err == nil {
+			panic("reader and err are both nil")
+		}
+		err = b.err
+		return
+	}
+	//becasue above contintion bypass b.reader!=nil and b.err= io.EOF??? so
+	//it can functionning!!!
+	//above contination only check read err,not the onging read error.
+
+	//next other err,eof and other err.should return ,but need process error EOF = nil
+
 	//first check err ,if err,omit following
 
 	// eveary read return EOF
@@ -441,7 +455,7 @@ func (b *Buffer) Read(p []byte) (n int, err error) {
 			bufferLog.Debugf("read %v from buffer", n)
 		}
 
-	} else if b.err != nil {
+	} else if b.err != nil { // first read,if err ,return error:::?
 		err = b.err
 
 	} else {
