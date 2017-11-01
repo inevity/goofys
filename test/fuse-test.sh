@@ -476,8 +476,12 @@ function test_rmdir_withfdopen {
    # mkdir /mnt/s3/test/dir3
     mkdir -p  $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR/test
     mkdir -p  $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR/test1
-    touch  $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR/repl
-    touch  $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR/uvvv
+   # touch  $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR/repl
+   # touch  $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR/uvvv
+    echo "ls mountpoint"
+    lsout0=`ls -lah $TEST_BUCKET_MOUNT_POINT_1/`
+    echo $lsout0
+
 
 
 #    ls -lah $TEST_BUCKET_MOUNT_POINT_1/
@@ -498,8 +502,21 @@ function test_rmdir_withfdopen {
     #ls -lha $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR
    # ls $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR
 
-    #lsout=`ls $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR`
+    echo "ls $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR"
+    lsout1=`ls $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR`
+   # ls $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR
+    echo $lsout1
+
+    echo "ls -lah $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR"
+    lsout2=`ls $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR`
+   # ls $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR
+    echo $lsout2
+
+
+    echo "should only test1 dir by ls"
+
     lsout=`ls $TEST_BUCKET_MOUNT_POINT_1/$TEST_DIR|uniq -c|grep 2|wc -l`
+
 
     #if [[ `echo "$lsout"|uniq -c|grep 2|wc -l` gt 0 ]] ; then
       #exit 1
@@ -600,8 +617,8 @@ then
 fi
 echo "to run all test"
 
-#run_all_tests
-test_mv_directory
+run_all_tests
+#test_mv_directory
 
 # Unmount the bucket
 popd
