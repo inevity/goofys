@@ -22,6 +22,8 @@ mkdir -p /tmp/s3proxy
 
 export LOG_LEVEL=warn
 
+# kill s3proxy
+#pgrep java|xargs kill -9
 PROXY_BIN="java -jar s3proxy.jar --properties test/s3proxy.properties"
 stdbuf -oL -eL $PROXY_BIN &
 PROXY_PID=$!
