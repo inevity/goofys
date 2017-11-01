@@ -313,23 +313,22 @@ func (dh *DirHandle) ReadDir(offset fuseops.DirOffset) (en *DirHandleEntry, err 
 	if offset == 0 {
 		dh.Entries = nil
 	}
-	/*
-	 *if dh.Entries != nil {
-	 *  i := int(offset) - dh.BaseOffset - 2
-	 *  if i >= len(dh.Entries) {
-	 *    if dh.Marker != nil {
-	 *      // we need to fetch the next page
-	 *      i = 0
-	 *    }
-	 *  }
-	 *  if i == len(dh.Entries) {
-	 *    // we've reached the end
-	 *    return nil, nil
-	 *  } else if i > len(dh.Entries) {
-	 *    return nil, fuse.EINVAL
-	 *  }
-	 *}
-	 */
+	if dh.Entries != nil {
+		fuseLog.Debugf("dh.Entries not nil preprocess ")
+		i := int(offset) - dh.BaseOffset - 2
+		if i >= len(dh.Entries) {
+			if dh.Marker != nil {
+				// we need to fetch the next page
+				i = 0
+			}
+		}
+		if i == len(dh.Entries) {
+			// we've reached the end
+			return nil, nil
+		} else if i > len(dh.Entries) {
+			return nil, fuse.EINVAL
+		}
+	}
 
 	fuseLog.Debugf("to readdirfromcache ")
 	en, ok := dh.inode.readDirFromCache(offset)
