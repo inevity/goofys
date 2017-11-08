@@ -40,6 +40,7 @@ func (s *MinioTest) SetUpSuite(t *C) {
 		S3ForcePathStyle: aws.Bool(true),
 	}
 
+	awsConfig.LogLevel = aws.LogLevel(aws.LogDebug | aws.LogDebugWithRequestErrors | aws.LogDebugWithSigning)
 	s.fs = &Goofys{
 		awsConfig: awsConfig,
 		sess:      session.New(awsConfig),
